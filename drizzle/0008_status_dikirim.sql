@@ -1,0 +1,1 @@
+ALTER TYPE "public"."donation_status" ADD VALUE 'dikirim' BEFORE 'diterima';

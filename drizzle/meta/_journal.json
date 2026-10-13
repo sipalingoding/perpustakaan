@@ -1,0 +1,125 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1791419291562,
+      "tag": "0000_awal",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791419766090,
+      "tag": "0001_nomor_anggota",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791419973138,
+      "tag": "0002_nomor_sumbangan",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791600391677,
+      "tag": "0003_hapus_rak",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791604936980,
+      "tag": "0004_foto_profil",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791606447525,
+      "tag": "0005_admin_koleksi",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791643259207,
+      "tag": "0006_kunci_berkas",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791643538488,
+      "tag": "0007_neon_auth_bucket",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791647565401,
+      "tag": "0008_status_dikirim",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791679560693,
+      "tag": "0009_jam_sumbangan",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791679996603,
+      "tag": "0010_sumbangan_ke_koleksi",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791682620813,
+      "tag": "0011_jam_ambil",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1791683760974,
+      "tag": "0012_notifikasi",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1791701767400,
+      "tag": "0013_halaman_dibaca",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1791708700162,
+      "tag": "0014_agenda",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1791726600507,
+      "tag": "0015_ulasan_buku",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1791730887676,
+      "tag": "0016_ajukan_pengembalian",
+      "breakpoints": true
+    }
+  ]
+}

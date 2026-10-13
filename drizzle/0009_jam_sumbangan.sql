@@ -1,0 +1,2 @@
+ALTER TABLE "donations" ADD COLUMN "scheduled_hour" smallint;--> statement-breakpoint
+ALTER TABLE "donations" ADD CONSTRAINT "donations_hour_range" CHECK ("donations"."scheduled_hour" is null or "donations"."scheduled_hour" between 0 and 23);

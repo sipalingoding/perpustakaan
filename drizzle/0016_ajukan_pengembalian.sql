@@ -1,0 +1,1 @@
+ALTER TABLE "loans" ADD COLUMN "return_requested_at" timestamp with time zone;

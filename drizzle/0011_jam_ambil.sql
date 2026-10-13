@@ -1,0 +1,2 @@
+ALTER TABLE "loans" ADD COLUMN "pickup_hour" smallint;--> statement-breakpoint
+ALTER TABLE "loans" ADD CONSTRAINT "loans_pickup_hour_range" CHECK ("loans"."pickup_hour" is null or "loans"."pickup_hour" between 0 and 23);

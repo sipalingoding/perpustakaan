@@ -1,0 +1,2 @@
+ALTER TABLE "loans" ADD COLUMN "current_page" integer;--> statement-breakpoint
+ALTER TABLE "loans" ADD CONSTRAINT "loans_current_page_range" CHECK ("loans"."current_page" is null or "loans"."current_page" >= 0);
