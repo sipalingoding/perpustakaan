@@ -6,6 +6,7 @@ import { useEffect, useId, useRef, useState, useTransition, type KeyboardEvent }
 import { Avatar, type AvatarLook } from "@/components/Avatar";
 import { Spinner } from "@/components/icons";
 import { authClient } from "@/lib/auth-client";
+import { clearActivity } from "@/lib/idle";
 import { cn } from "@/lib/cn";
 
 const item =
@@ -84,6 +85,7 @@ export function ProfileMenu({
       setSignOutError("Gagal keluar. Periksa koneksi lalu coba lagi.");
       return;
     }
+    clearActivity();
     setSigningOut(false);
     setOpen(false);
     startNavigation(() => {

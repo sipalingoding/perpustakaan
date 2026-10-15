@@ -19,6 +19,7 @@ import {
   mdiClose,
   mdiCoffeeOutline,
   mdiMapMarkerOutline,
+  mdiMenu,
   mdiAccountGroupOutline,
   mdiEyeOutline,
   mdiStar,
@@ -61,6 +62,7 @@ export const Bell = (p: IconProps) => <Icon path={mdiBellOutline} size={22} {...
 export const Search = (p: IconProps) => <Icon path={mdiMagnify} size={22} {...p} />;
 export const Check = (p: IconProps) => <Icon path={mdiCheck} {...p} />;
 export const Cross = (p: IconProps) => <Icon path={mdiClose} {...p} />;
+export const Menu = (p: IconProps) => <Icon path={mdiMenu} size={24} {...p} />;
 export const Camera = (p: IconProps) => <Icon path={mdiCameraOutline} {...p} />;
 export const Trash = (p: IconProps) => <Icon path={mdiTrashCanOutline} {...p} />;
 export const Plus = (p: IconProps) => <Icon path={mdiPlus} {...p} />;

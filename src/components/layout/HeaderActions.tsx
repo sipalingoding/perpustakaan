@@ -1,8 +1,10 @@
 import Link from "next/link";
 import type { NavKey } from "@/components/layout/SiteHeader";
+import { IdleSignOut } from "@/components/layout/IdleSignOut";
 import { NotificationMenu } from "@/components/layout/NotificationMenu";
 import { ProfileMenu } from "@/components/layout/ProfileMenu";
 import { ui } from "@/components/ui";
+import { idleMinutes } from "@/lib/idle";
 import { countDueReminders, getProfile, resolveLook } from "@/lib/server/members";
 import { countUnread, getNotifications } from "@/lib/server/notifications";
 import { getRole, getViewer } from "@/lib/server/session";
@@ -31,6 +33,7 @@ export async function HeaderActions({ active }: { active?: NavKey }) {
     <>
       <NotificationMenu items={items} unread={unread} due={due} />
       <ProfileMenu name={viewer.name} email={viewer.email} look={look} onProfile={active === "profil"} librarian={role === "pustakawan"} />
+      <IdleSignOut minutes={idleMinutes(process.env.IDLE_TIMEOUT_MINUTES)} />
     </>
   );
 }

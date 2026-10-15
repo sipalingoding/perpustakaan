@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { AuthProblemBar } from "@/components/layout/AuthProblemBar";
 import { HeaderActions } from "@/components/layout/HeaderActions";
 import { LogoMark } from "@/components/layout/LogoMark";
+import { MobileNav } from "@/components/layout/MobileNav";
 import { Skeleton } from "@/components/Skeleton";
 import { ui } from "@/components/ui";
 import { cn } from "@/lib/cn";
@@ -20,12 +21,13 @@ const NAV: Array<{ key: NavKey; href: string; label: string }> = [
 export function SiteHeader({ active }: { active?: NavKey }) {
   return (
     <header className="border-b border-line">
-      <div className={cn(ui.wrap, "flex flex-wrap items-center gap-x-7 gap-y-3 py-3.5")}>
+      <div className={cn(ui.wrap, "flex items-center gap-x-7 gap-y-3 py-3.5")}>
+        <MobileNav items={NAV} active={active} />
         <Link href="/" className="flex min-h-11 items-center gap-2.5 text-ink no-underline hover:text-ink">
           <LogoMark />
           <span className="display text-[28px] leading-none">Lembar</span>
         </Link>
-        <nav aria-label="Navigasi utama" className="flex flex-wrap gap-1">
+        <nav aria-label="Navigasi utama" className="hidden flex-wrap gap-1 min-[821px]:flex">
           {NAV.map((item) => (
             <Link
               key={item.key}

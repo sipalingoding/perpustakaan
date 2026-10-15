@@ -13,6 +13,7 @@ import { ui } from "@/components/ui";
 import { authClient } from "@/lib/auth-client";
 import { AUTH_PROBLEMS, isAuthProblem } from "@/lib/auth-problems";
 import { cn } from "@/lib/cn";
+import { IDLE_SIGN_OUT, idleMessage, markActivity } from "@/lib/idle";
 import { PERSON } from "@/lib/people";
 
 type Mode = "masuk" | "daftar";
@@ -205,6 +206,8 @@ function useAuthForm(
         return;
       }
       await afterAuth?.(data);
+      // Catatan aktivitas dari sesi sebelumnya tidak boleh langsung mengeluarkan sesi yang baru.
+      markActivity();
       // Server yang menentukan tujuan, karena hanya server yang tahu peran akun (pustakawan ke /admin).
       const target = await landingAfterSignIn(new URLSearchParams(window.location.search).get("lanjut"));
       // Kata sandi tidak ikut tersimpan di halaman /masuk yang disimpan Next.
@@ -248,10 +251,13 @@ function SignInForm({ onSwitch }: { onSwitch: () => void }) {
     return authClient.signIn.email({ email: String(data.get("email")).trim(), password, rememberMe: remember });
   });
 
-  // Dialihkan ke sini karena sesi bermasalah (?galat=…): tampilkan alasannya, jangan hanya diam di formulir.
+  // Dialihkan ke sini karena sesi bermasalah (?galat=…) atau berakhir karena tidak aktif (?keluar=…): tampilkan
+  // alasannya, jangan hanya diam di formulir.
   useEffect(() => {
-    const code = new URLSearchParams(window.location.search).get("galat");
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("galat");
     if (isAuthProblem(code)) setError(AUTH_PROBLEMS[code]);
+    else if (params.get("keluar") === IDLE_SIGN_OUT) setError(idleMessage(params.get("menit")));
   }, [setError]);
 
   const switchMethod = () => {
