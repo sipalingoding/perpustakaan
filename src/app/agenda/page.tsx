@@ -4,7 +4,7 @@ import { AgendaClient } from "@/components/agenda/AgendaClient";
 import { PageShell } from "@/components/layout/PageShell";
 import { AgendaSkeleton } from "@/components/Skeleton";
 import { getAgendaPhotos, getUpcomingEvents } from "@/lib/server/agenda";
-import { getViewer } from "@/lib/server/session";
+import { requireViewer } from "@/lib/server/session";
 
 export const metadata: Metadata = {
   title: "Agenda",
@@ -21,9 +21,8 @@ export default function AgendaPage() {
   );
 }
 
-/** Terbuka untuk tamu; mendaftar perlu masuk. */
 async function Agenda() {
-  const viewer = await getViewer();
-  const [events, photos] = await Promise.all([getUpcomingEvents(viewer?.id ?? null), getAgendaPhotos()]);
-  return <AgendaClient events={events} photos={photos} signedIn={!!viewer} />;
+  const viewer = await requireViewer("/agenda");
+  const [events, photos] = await Promise.all([getUpcomingEvents(viewer.id), getAgendaPhotos()]);
+  return <AgendaClient events={events} photos={photos} signedIn />;
 }

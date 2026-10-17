@@ -7,6 +7,8 @@ export const LIBRARY = {
   openHour: 10,
   closeHour: 17,
   address: "Jl. Sindang Rancah, Rancah, Kec. Rancah, Kabupaten Ciamis, Jawa Barat 46387",
+  /** Kontak pengelola di Kebijakan privasi, Hapus akun, dan Play Store. */
+  email: "salman.faris.siddiq@gmail.com",
 } as const;
 
 /** Slot antar/jemput per jam: 10.00, 11.00, … sampai satu jam sebelum tutup. */

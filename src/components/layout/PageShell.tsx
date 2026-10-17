@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { ReactNode } from "react";
 import { SiteHeader, type NavKey } from "@/components/layout/SiteHeader";
 import { ui } from "@/components/ui";
@@ -23,6 +24,14 @@ export function PageShell({ active, children }: { active?: NavKey; children: Rea
             </span>
             <span>{LIBRARY.address}</span>
           </address>
+          <nav aria-label="Informasi" className="flex basis-full gap-5">
+            <Link href="/kebijakan-privasi" className="text-ink-3">
+              Kebijakan privasi
+            </Link>
+            <Link href="/hapus-akun" className="text-ink-3">
+              Hapus akun
+            </Link>
+          </nav>
         </div>
       </footer>
     </div>

@@ -8,6 +8,7 @@ import { ArrowRight, Camera, Check, Pencil, Spinner, Trash } from "@/components/
 import { LeaningBook } from "@/components/illustrations/LeaningBook";
 import { ReaderArmchair } from "@/components/illustrations/ReaderArmchair";
 import { ShelfPlant } from "@/components/illustrations/ShelfPlant";
+import { DeleteAccount } from "@/components/profile/DeleteAccount";
 import { MemberCard } from "@/components/profile/MemberCard";
 import { ReadingTracker } from "@/components/profile/ReadingTracker";
 import { ui } from "@/components/ui";
@@ -506,6 +507,8 @@ export function ProfileClient({ data, categories }: { data: ProfileData; categor
           </div>
         </section>
       </div>
+
+      <DeleteAccount />
     </div>
   );
 }

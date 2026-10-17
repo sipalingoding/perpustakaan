@@ -4,7 +4,7 @@ import { auth } from "@/lib/server/auth";
 const neonAuth = auth.middleware({ loginUrl: "/masuk" });
 
 /**
- * Halaman khusus anggota. Middleware Neon Auth memeriksa sesi dan memperbarui cookie-nya; tamu dialihkan ke
+ * Semua halaman selain katalog (/ dan /buku/...) khusus anggota. Middleware Neon Auth memeriksa sesi dan memperbarui cookie-nya; tamu dialihkan ke
  * /masuk dengan ?lanjut= supaya kembali ke halaman ini setelah masuk. Halaman tetap memeriksa lewat requireViewer().
  */
 export async function proxy(request: NextRequest) {
@@ -19,5 +19,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/jadwal/:path*", "/profil/:path*", "/sumbang/:path*", "/anggota/:path*", "/admin/:path*"],
+  matcher: ["/jadwal/:path*", "/profil/:path*", "/sumbang/:path*", "/anggota/:path*", "/agenda/:path*", "/admin/:path*"],
 };

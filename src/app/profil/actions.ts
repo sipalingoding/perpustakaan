@@ -2,10 +2,12 @@
 
 import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
 import sharp from "sharp";
 import { z } from "zod";
 import { bookCopies, books, categories, loans, profiles, user } from "@/db/schema";
 import { AVATAR_PRESETS } from "@/lib/people";
+import { deleteMemberAccount } from "@/lib/server/account-deletion";
 import { deleteFile, fileUrl, newFileKey, putFile } from "@/lib/server/storage";
 import { db } from "@/db";
 import { getViewer } from "@/lib/server/session";
@@ -194,4 +196,21 @@ export async function selectPhoto(): Promise<ActionResult> {
     .returning({ id: profiles.userId });
   if (updated.length === 0) return INVALID;
   return done();
+}
+
+/** Hapus akun yang sedang masuk (lihat deleteMemberAccount), lalu buang cookie sesinya dari peramban ini. */
+export async function deleteAccount(password: string): Promise<ActionResult> {
+  const viewer = await getViewer();
+  if (!viewer) return SESSION_ENDED;
+  if (typeof password !== "string" || password.length === 0) return { ok: false, error: "Isi kata sandimu dulu." };
+  const result = await deleteMemberAccount(viewer.id, password);
+  if (!result.ok) return result;
+
+  // Sesi di server sudah terhapus, tapi cookie session_data Neon Auth masih bisa dibaca sampai 5 menit.
+  const jar = await cookies();
+  for (const { name } of jar.getAll()) {
+    if (name.startsWith("__Secure-neon-auth")) jar.set(name, "", { path: "/", maxAge: 0, secure: true, httpOnly: true });
+  }
+  revalidatePath("/", "layout");
+  return { ok: true };
 }

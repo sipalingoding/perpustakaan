@@ -1,5 +1,5 @@
 import "server-only";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { notFound, redirect } from "next/navigation";
 import { connection } from "next/server";
 import { cache } from "react";
@@ -37,6 +37,11 @@ export const getAuthState = cache(async (): Promise<AuthState> => {
 
   const [member] = await db.select({ name: user.name, email: user.email }).from(user).where(eq(user.id, account.id));
   if (member) return { viewer: { id: account.id, ...member }, problem: null };
+
+  // Akun yang baru dihapus masih bisa terbaca dari cookie session_data di perangkat lain (sampai 5 menit); jangan
+  // buat ulang datanya.
+  const { rows } = await db.execute(sql`select 1 from neon_auth."user" where id::text = ${account.id}`);
+  if (rows.length === 0) return { viewer: null, problem: null };
 
   // Akun baru: buat baris anggotanya. Email yang sudah dipakai anggota lain tidak diambil alih.
   const [created] = await db
