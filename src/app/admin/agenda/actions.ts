@@ -1,6 +1,7 @@
 "use server";
 
 import { asc, eq, sql } from "drizzle-orm";
+import { revalidatePath } from "next/cache";
 import sharp from "sharp";
 import { z } from "zod";
 import { db } from "@/db";
@@ -24,6 +25,15 @@ async function isLibrarian() {
 }
 
 const hhmm = (t: string) => t.slice(0, 5).replace(":", ".");
+
+/**
+ * Jadwal, poster, dan foto tampil di halaman Agenda (dan lonceng notifikasi anggota). Tanpa ini, browser yang pernah
+ * membuka /agenda masih menampilkan versi lama, mis. "Jadwal berikutnya belum diumumkan" padahal jadwalnya sudah ada.
+ */
+function refresh() {
+  revalidatePath("/agenda");
+  revalidatePath("/admin/agenda");
+}
 
 /* ---------------------------------------------------------------- */
 /* Jadwal                                                            */
@@ -86,11 +96,12 @@ export async function saveEvent(input: EventInput): Promise<SaveEventResult> {
         note: v.note,
       })
       .returning({ id: agendaEvents.id });
+    refresh();
     return { ok: true, id: created.id, notified: 0 };
   }
 
   const id = v.id;
-  return db.transaction(async (tx): Promise<SaveEventResult> => {
+  const result = await db.transaction(async (tx): Promise<SaveEventResult> => {
     const [before] = await tx.select().from(agendaEvents).where(eq(agendaEvents.id, id)).for("update");
     if (!before) return { ok: false, error: "Jadwal ini sudah dihapus. Muat ulang halaman." };
 
@@ -143,6 +154,8 @@ export async function saveEvent(input: EventInput): Promise<SaveEventResult> {
     }
     return { ok: true, id, notified: changed ? people.length : 0 };
   });
+  if (result.ok) refresh();
+  return result;
 }
 
 export type DeleteEventResult = { ok: true; notified: number } | Fail;
@@ -152,10 +165,11 @@ export async function deleteEvent(id: string): Promise<DeleteEventResult> {
   if (!(await isLibrarian())) return NOT_ALLOWED;
   if (!z.uuid().safeParse(id).success) return { ok: false, error: "Jadwal tidak dikenal." };
 
-  return db.transaction(async (tx): Promise<DeleteEventResult> => {
+  const result = await db.transaction(async (tx): Promise<DeleteEventResult & { posterKey?: string | null }> => {
     const [event] = await tx
       .select({
         kind: agendaEvents.kind,
+        posterKey: agendaEvents.posterKey,
         date: agendaEvents.date,
         startTime: agendaEvents.startTime,
         upcoming: sql<boolean>`(${agendaEvents.date} > ${todayJakarta} or (${agendaEvents.date} = ${todayJakarta} and ${agendaEvents.endTime} > ${nowTimeJakarta}))`,
@@ -183,8 +197,79 @@ export async function deleteEvent(id: string): Promise<DeleteEventResult> {
       );
     }
     await tx.delete(agendaEvents).where(eq(agendaEvents.id, id));
-    return { ok: true, notified: event.upcoming ? people.length : 0 };
+    return { ok: true, notified: event.upcoming ? people.length : 0, posterKey: event.posterKey };
   });
+  if (!result.ok) return result;
+  // Berkas poster dihapus setelah datanya terhapus, supaya tidak ada jadwal yang menunjuk berkas hilang.
+  await deleteFile(result.posterKey);
+  refresh();
+  return { ok: true, notified: result.notified };
+}
+
+/* ---------------------------------------------------------------- */
+/* Poster jadwal                                                     */
+/* ---------------------------------------------------------------- */
+
+export type PosterResult = { ok: true; poster: { src: string; width: number; height: number } | null } | Fail;
+
+/**
+ * Pasang, ganti, atau hapus poster satu jadwal. FormData: `id`, lalu `poster` (berkas gambar) atau `hapus=1`.
+ * Poster lama dihapus dari penyimpanan setelah yang baru tersimpan.
+ */
+export async function setEventPoster(form: FormData): Promise<PosterResult> {
+  if (!(await isLibrarian())) return NOT_ALLOWED;
+  const id = z.uuid().safeParse(form.get("id"));
+  if (!id.success) return { ok: false, error: "Jadwal tidak dikenal." };
+  const [event] = await db
+    .select({ posterKey: agendaEvents.posterKey })
+    .from(agendaEvents)
+    .where(eq(agendaEvents.id, id.data));
+  if (!event) return { ok: false, error: "Jadwal ini sudah dihapus. Muat ulang halaman." };
+
+  if (form.get("hapus") === "1") {
+    await db
+      .update(agendaEvents)
+      .set({ posterKey: null, posterWidth: null, posterHeight: null })
+      .where(eq(agendaEvents.id, id.data));
+    await deleteFile(event.posterKey);
+    refresh();
+    return { ok: true, poster: null };
+  }
+
+  const file = form.get("poster");
+  if (!(file instanceof File) || file.size === 0) return { ok: false, error: "Pilih gambar posternya dulu." };
+  if (file.size > MAX_UPLOAD_BYTES) return { ok: false, error: "Posternya terlalu besar. Coba gambar lain." };
+
+  // Diolah ulang di server seperti foto dokumentasi: JPEG sisi terpanjang maks. 1600 px, tanpa metadata.
+  let out: { data: Buffer; info: { width: number; height: number } };
+  try {
+    out = await sharp(Buffer.from(await file.arrayBuffer()), { limitInputPixels: 40_000_000 })
+      .rotate()
+      .resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true })
+      .flatten({ background: "#ffffff" })
+      .jpeg({ quality: 85, mozjpeg: true })
+      .toBuffer({ resolveWithObject: true });
+  } catch {
+    return { ok: false, error: "Gambar ini tidak bisa dibuka. Pakai poster JPG, PNG, atau WebP." };
+  }
+  if (out.info.width < 200 || out.info.height < 200) {
+    return { ok: false, error: "Posternya terlalu kecil. Minimal 200 piksel." };
+  }
+
+  const key = newFileKey("agenda", "poster");
+  await putFile(key, out.data);
+  try {
+    await db
+      .update(agendaEvents)
+      .set({ posterKey: key, posterWidth: out.info.width, posterHeight: out.info.height })
+      .where(eq(agendaEvents.id, id.data));
+  } catch (e) {
+    await deleteFile(key);
+    throw e;
+  }
+  await deleteFile(event.posterKey);
+  refresh();
+  return { ok: true, poster: { src: fileUrl(key), width: out.info.width, height: out.info.height } };
 }
 
 /* ---------------------------------------------------------------- */
@@ -243,6 +328,7 @@ export async function uploadAgendaPhoto(form: FormData): Promise<PhotoUploadResu
       .insert(agendaPhotos)
       .values({ kind: kind.data, fileKey: key, width: out.info.width, height: out.info.height, caption: caption.data })
       .returning({ id: agendaPhotos.id });
+    refresh();
     return {
       ok: true,
       photo: { id: row.id, src: fileUrl(key), width: out.info.width, height: out.info.height, caption: caption.data },
@@ -258,5 +344,6 @@ export async function deleteAgendaPhoto(id: string): Promise<{ ok: true } | Fail
   if (!z.uuid().safeParse(id).success) return { ok: false, error: "Foto tidak dikenal." };
   const [gone] = await db.delete(agendaPhotos).where(eq(agendaPhotos.id, id)).returning({ key: agendaPhotos.fileKey });
   await deleteFile(gone?.key);
+  refresh();
   return { ok: true };
 }

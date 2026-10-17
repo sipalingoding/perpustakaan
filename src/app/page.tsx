@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { CatalogSkeleton } from "@/components/Skeleton";
 import { KatalogClient } from "@/components/catalog/KatalogClient";
+import { VisitInfo } from "@/components/catalog/VisitInfo";
 import { PageShell } from "@/components/layout/PageShell";
 import { getMyActiveLoans } from "@/lib/server/loans";
 import { getBooks } from "@/lib/server/catalog";
@@ -13,6 +14,7 @@ export default function KatalogPage() {
       <Suspense fallback={<CatalogSkeleton />}>
         <Katalog />
       </Suspense>
+      <VisitInfo />
     </PageShell>
   );
 }

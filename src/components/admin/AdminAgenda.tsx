@@ -1,17 +1,18 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useId, useRef, useState, useTransition, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, useTransition, type FormEvent } from "react";
 import {
   deleteAgendaPhoto,
   deleteEvent,
   saveEvent,
+  setEventPoster,
   uploadAgendaPhoto,
   type EventInput,
 } from "@/app/admin/agenda/actions";
 import { ConfirmDelete } from "@/components/admin/ConfirmDelete";
 import { iconAction } from "@/components/admin/IconLink";
-import { Check, Cross, ImageIcon, Pencil, Plus, Spinner, Upload } from "@/components/icons";
+import { Check, Cross, ImageIcon, Pencil, Plus, Spinner, Trash, Upload } from "@/components/icons";
 import { ui } from "@/components/ui";
 import { AGENDA, AGENDA_KINDS, MAX_AGENDA_PHOTOS, type AgendaKind } from "@/lib/agenda";
 import { cn } from "@/lib/cn";
@@ -214,6 +215,17 @@ function EventTable({
                     {info.name}
                   </span>
                   {e.note && <span className="mt-1 block max-w-[34ch] text-[13px] text-ink-3">{e.note}</span>}
+                  {e.poster && (
+                    <a
+                      href={e.poster.src}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-1.5 inline-flex min-h-8 items-center gap-1.5 text-[13px] font-semibold text-primary-600"
+                    >
+                      <ImageIcon size={16} />
+                      Lihat poster
+                    </a>
+                  )}
                 </td>
                 <td className="px-3 py-3.5">
                   <span className="block font-semibold text-ink-2">{formatDay(Date.parse(e.date))}</span>
@@ -231,21 +243,7 @@ function EventTable({
                     {e.capacity !== null ? ` / ${e.capacity}` : ""} orang
                   </span>
                   {e.capacity === null && <span className="block text-xs text-muted">Tanpa batas kursi</span>}
-                  {e.participants.length > 0 && (
-                    <details className="mt-1">
-                      <summary className="inline-flex min-h-8 cursor-pointer items-center text-[13px] font-semibold text-primary-600">
-                        Lihat peserta
-                      </summary>
-                      <ol className="m-0 mt-1 flex list-decimal flex-col gap-1 pl-5 text-[13px] text-ink-2">
-                        {e.participants.map((p) => (
-                          <li key={p.email}>
-                            <span className="font-semibold">{p.name}</span>{" "}
-                            <span className="break-all text-ink-3">{p.email}</span>
-                          </li>
-                        ))}
-                      </ol>
-                    </details>
-                  )}
+                  {e.participants.length > 0 && <ParticipantsButton event={e} title={label} />}
                 </td>
                 <td className="py-2 pr-5 pl-3 text-right whitespace-nowrap">
                   {onEdit && (
@@ -277,6 +275,89 @@ function EventTable({
       </table>
       {events.length === 0 && empty && <p className="m-0 px-5 py-8 text-center text-[15px] text-ink-3">{empty}</p>}
     </div>
+  );
+}
+
+/** Tombol "Lihat peserta" yang membuka daftar peserta di jendela di tengah layar. */
+function ParticipantsButton({ event: e, title }: { event: AdminAgendaEvent; title: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-haspopup="dialog"
+        className="mt-1 inline-flex min-h-8 cursor-pointer items-center border-0 bg-transparent p-0 text-[13px] font-semibold text-primary-600 hover:underline"
+      >
+        Lihat peserta
+      </button>
+      {open && <ParticipantsDialog event={e} title={title} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+function ParticipantsDialog({
+  event: e,
+  title,
+  onClose,
+}: {
+  event: AdminAgendaEvent;
+  title: string;
+  onClose: () => void;
+}) {
+  const id = useId();
+  const dialog = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const d = dialog.current;
+    d?.showModal();
+    return () => d?.close();
+  }, []);
+
+  return (
+    <dialog
+      ref={dialog}
+      aria-labelledby={`${id}-h`}
+      onCancel={(ev) => {
+        ev.preventDefault();
+        onClose();
+      }}
+      // Klik di area gelap (di luar kotak) menutup jendela.
+      onClick={(ev) => ev.target === ev.currentTarget && onClose()}
+      className="m-auto max-h-[min(640px,calc(100dvh-32px))] w-[min(480px,calc(100vw-32px))] max-w-none animate-pop overflow-hidden rounded-[26px] border border-line bg-paper p-0 text-left text-ink shadow-[0_40px_80px_-30px_rgba(29,43,40,.6)] backdrop:bg-[rgb(18_26_24/0.55)]"
+    >
+      <div className="flex max-h-[inherit] flex-col">
+        <div className="flex items-start justify-between gap-3 border-b border-line-2 py-4 pr-3 pl-6">
+          <div className="min-w-0 pt-1">
+            <h2 id={`${id}-h`} className="m-0 text-lg leading-snug font-bold">
+              Peserta {title}
+            </h2>
+            <p className="m-0 mt-0.5 text-[13px] text-ink-3 tabular-nums">
+              {e.registered}
+              {e.capacity !== null ? ` dari ${e.capacity} kursi` : " orang, tanpa batas kursi"} · {e.start}–{e.end} WIB
+            </p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Tutup daftar peserta" autoFocus className={iconAction}>
+            <Cross size={22} />
+          </button>
+        </div>
+        <ol className="m-0 flex list-none flex-col overflow-y-auto p-2">
+          {e.participants.map((p, i) => (
+            <li key={p.email} className="flex items-start gap-3 rounded-[14px] px-4 py-2.5 hover:bg-tint">
+              <span className="w-6 shrink-0 pt-px text-right text-[13px] font-semibold text-muted tabular-nums">
+                {i + 1}.
+              </span>
+              <span className="min-w-0">
+                <span className="block text-sm font-semibold text-ink">{p.name}</span>
+                <a href={`mailto:${p.email}`} className="block text-[13px] break-all text-ink-3">
+                  {p.email}
+                </a>
+              </span>
+            </li>
+          ))}
+        </ol>
+      </div>
+    </dialog>
   );
 }
 
@@ -312,6 +393,53 @@ function EventForm({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const setError = useErrorToast();
   const [saving, setSaving] = useState(false);
+  // Poster: gambar baru yang sudah diperkecil di browser, atau tanda hapus untuk poster yang tersimpan.
+  const [posterDraft, setPosterDraft] = useState<{ blob: Blob; url: string } | null>(null);
+  const [removePoster, setRemovePoster] = useState(false);
+  const [preparingPoster, setPreparingPoster] = useState(false);
+  const posterInput = useRef<HTMLInputElement>(null);
+  const posterSrc = posterDraft?.url ?? (removePoster ? null : (event?.poster?.src ?? null));
+
+  const choosePoster = async (file: File | undefined) => {
+    if (!file) return;
+    setPreparingPoster(true);
+    try {
+      let blob = await fitImage(file, 1600, 1600, 0.85);
+      if (blob.size > MAX_UPLOAD_BYTES) blob = await fitImage(file, 1400, 1400, 0.72);
+      if (blob.size > MAX_UPLOAD_BYTES) {
+        setError("Poster ini masih terlalu besar setelah diperkecil. Coba gambar lain.");
+        return;
+      }
+      if (posterDraft) URL.revokeObjectURL(posterDraft.url);
+      setPosterDraft({ blob, url: URL.createObjectURL(blob) });
+      setRemovePoster(false);
+    } catch {
+      setError("Gambar ini tidak bisa dibuka. Pakai poster JPG, PNG, atau WebP.");
+    } finally {
+      setPreparingPoster(false);
+    }
+  };
+
+  const dropPoster = () => {
+    if (posterDraft) URL.revokeObjectURL(posterDraft.url);
+    setPosterDraft(null);
+    setRemovePoster(!!event?.poster);
+  };
+
+  /** Simpan perubahan poster setelah jadwalnya tersimpan. Mengembalikan pesan galat, atau null bila beres. */
+  const savePoster = async (eventId: string): Promise<string | null> => {
+    if (!posterDraft && !removePoster) return null;
+    const form = new FormData();
+    form.set("id", eventId);
+    if (posterDraft) form.set("poster", posterDraft.blob, "poster.jpg");
+    else form.set("hapus", "1");
+    try {
+      const r = await setEventPoster(form);
+      return r.ok ? null : r.error;
+    } catch {
+      return "Periksa koneksi lalu coba lagi.";
+    }
+  };
 
   const set = (patch: Partial<EventInput>) => {
     setValues((v) => ({ ...v, ...patch }));
@@ -336,8 +464,10 @@ function EventForm({
         if (first) document.getElementById(`${id}-${first}`)?.focus();
         return;
       }
+      const posterError = await savePoster(result.id);
       const name = AGENDA[values.kind as AgendaKind].name;
       const when = formatDay(Date.parse(values.date));
+      if (posterError) setError(`Jadwal tersimpan, tapi posternya belum: ${posterError} Buka "Ubah" untuk mencoba lagi.`);
       onSaved(
         event
           ? result.notified > 0
@@ -493,6 +623,73 @@ function EventForm({
         />
         {fieldError("note")}
       </label>
+
+      <div className="flex flex-col gap-2.5">
+        <span id={`${id}-poster-h`} className={ui.label}>
+          Poster (opsional)
+        </span>
+        <div className="flex flex-wrap items-start gap-4">
+          {posterSrc ? (
+            // eslint-disable-next-line @next/next/no-img-element -- pratinjau lokal atau berkas unggahan sendiri
+            <img
+              src={posterSrc}
+              alt="Pratinjau poster"
+              className="max-h-56 w-auto max-w-[180px] rounded-[14px] border border-line bg-white object-contain"
+            />
+          ) : (
+            <span className="flex h-40 w-[128px] flex-col items-center justify-center gap-2 rounded-[14px] border-[1.5px] border-dashed border-field px-3 text-center text-xs font-semibold text-muted">
+              <ImageIcon size={28} />
+              Belum ada poster
+            </span>
+          )}
+          <div className="flex min-w-0 flex-1 flex-col items-start gap-2.5">
+            <p className="m-0 max-w-[48ch] text-[13px] leading-relaxed text-ink-3">
+              Tampil di halaman Agenda. JPG, PNG, atau WebP; diperkecil otomatis sampai 1600 piksel.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => posterInput.current?.click()}
+                disabled={preparingPoster || saving}
+                aria-busy={preparingPoster}
+                aria-describedby={`${id}-poster-h`}
+                className={cn(ui.btn, ui.ghost, "min-h-11 px-4 text-sm")}
+              >
+                {preparingPoster ? <Spinner size={18} /> : <Upload size={18} />}
+                {posterSrc ? "Ganti poster" : "Pilih poster"}
+              </button>
+              {posterSrc && (
+                <button
+                  type="button"
+                  onClick={dropPoster}
+                  disabled={saving}
+                  className={cn(ui.btn, ui.ghost, "min-h-11 px-4 text-sm hover:bg-accent-100 hover:text-accent-700")}
+                >
+                  <Trash size={18} />
+                  Hapus poster
+                </button>
+              )}
+            </div>
+            {(posterDraft || removePoster) && (
+              <p className="m-0 text-[13px] font-semibold text-ink-2">
+                {posterDraft ? "Poster baru tersimpan" : "Poster dihapus"} setelah kamu menekan tombol simpan.
+              </p>
+            )}
+          </div>
+          <input
+            ref={posterInput}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            className="sr-only"
+            tabIndex={-1}
+            aria-label="Pilih berkas poster"
+            onChange={(e) => {
+              choosePoster(e.target.files?.[0]);
+              e.target.value = "";
+            }}
+          />
+        </div>
+      </div>
 
       <div className="flex flex-wrap items-center gap-3">
         <button

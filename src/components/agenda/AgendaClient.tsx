@@ -193,9 +193,35 @@ function Ticket({ event: e, children }: { event: AgendaEventView; children: Reac
         </div>
         <EventFacts event={e} />
         {e.note && <p className="m-0 text-sm leading-relaxed text-ink-2">{e.note}</p>}
+        {e.poster && <Poster event={e} className="max-h-[360px]" />}
         {children}
       </div>
     </article>
+  );
+}
+
+/** Poster acara; diklik untuk membuka ukuran penuhnya di tab baru. */
+function Poster({ event: e, className }: { event: AgendaEventView; className?: string }) {
+  if (!e.poster) return null;
+  const name = AGENDA[e.kind].name;
+  return (
+    <a
+      href={e.poster.src}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={`Poster ${name}, ${formatDay(Date.parse(e.date))} (buka ukuran penuh di tab baru)`}
+      className="block self-start overflow-hidden rounded-[14px] border border-line bg-white transition hover:shadow-[0_14px_28px_-18px_rgba(29,43,40,.55)]"
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element -- berkas unggahan dari /berkas, sudah diperkecil di server */}
+      <img
+        src={e.poster.src}
+        alt=""
+        width={e.poster.width}
+        height={e.poster.height}
+        loading="lazy"
+        className={cn("block h-auto w-auto max-w-full object-contain", className)}
+      />
+    </a>
   );
 }
 
@@ -242,6 +268,11 @@ function EventRow({ event: e, children }: { event: AgendaEventView; children: Re
         <h3 className="m-0 text-lg leading-snug font-bold">{info.name}</h3>
         <p className="m-0 text-sm text-ink-3">{info.tagline}</p>
         {e.note && <p className="m-0 mt-1.5 text-sm leading-relaxed text-ink-2">{e.note}</p>}
+        {e.poster && (
+          <div className="mt-3">
+            <Poster event={e} className="max-h-[200px]" />
+          </div>
+        )}
       </div>
       <div className="col-start-2 md:col-start-auto">
         <EventFacts event={e} />

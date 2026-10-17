@@ -110,6 +110,10 @@
 }
 
 @layer base {
+  /* Header situs melayang di atas; target gulir (anchor, scrollIntoView) berhenti di bawahnya. */
+  html {
+    scroll-padding-top: 96px;
+  }
   body {
     background-color: var(--color-ground);
     color: var(--color-ink);

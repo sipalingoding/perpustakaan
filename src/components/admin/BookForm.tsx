@@ -383,7 +383,7 @@ export function BookForm({
           </Section>
         </div>
 
-        <aside className={cn(ui.card, "flex flex-col gap-4 lg:sticky lg:top-6")} aria-labelledby={`${formId}-cover-h`}>
+        <aside className={cn(ui.card, "flex flex-col gap-4 lg:sticky lg:top-28")} aria-labelledby={`${formId}-cover-h`}>
           <h2 id={`${formId}-cover-h`} className="display m-0 text-[28px] leading-none">
             Sampul
           </h2>

@@ -19,7 +19,7 @@ export function PageShell({ active, children }: { active?: NavKey; children: Rea
           </span>
           <address className="flex max-w-[46ch] flex-col gap-0.5 not-italic sm:text-right">
             <span>
-              Jam layanan: <strong className="font-semibold text-ink-2">{LIBRARY.hours}</strong>
+              Jam layanan: <strong className="font-semibold text-ink-2">{LIBRARY.days}, {LIBRARY.hours}</strong>
             </span>
             <span>{LIBRARY.address}</span>
           </address>

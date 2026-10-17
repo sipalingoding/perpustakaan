@@ -1,5 +1,7 @@
 /** Data perpustakaan yang tampil di footer dan halaman Sumbang. Ubah di sini saja. */
 export const LIBRARY = {
+  /** Hari buka. */
+  days: "Setiap hari",
   hours: "10.00–17.00",
   /** Jam buka dan tutup (jam bulat, waktu Jakarta). Slot antar/jemput sumbangan dihitung dari sini. */
   openHour: 10,

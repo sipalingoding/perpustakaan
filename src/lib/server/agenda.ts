@@ -35,6 +35,8 @@ export type AgendaEventView = {
   started: boolean;
   /** Anggota yang sedang melihat sudah terdaftar. */
   mine: boolean;
+  /** Poster acara, bila pustakawan mengunggahnya. */
+  poster: { src: string; width: number; height: number } | null;
 };
 
 /** "19:30:00" -> "19.30" */
@@ -53,6 +55,9 @@ const eventColumns = {
   capacity: agendaEvents.capacity,
   registered: registeredCount,
   started: startedSql,
+  posterKey: agendaEvents.posterKey,
+  posterWidth: agendaEvents.posterWidth,
+  posterHeight: agendaEvents.posterHeight,
 };
 
 type EventRow = {
@@ -66,6 +71,9 @@ type EventRow = {
   capacity: number | null;
   registered: number;
   started: boolean;
+  posterKey: string | null;
+  posterWidth: number | null;
+  posterHeight: number | null;
 };
 
 const toView = (r: EventRow, mine: boolean): AgendaEventView => ({
@@ -80,6 +88,10 @@ const toView = (r: EventRow, mine: boolean): AgendaEventView => ({
   registered: r.registered,
   started: r.started,
   mine,
+  poster:
+    r.posterKey && r.posterWidth && r.posterHeight
+      ? { src: fileUrl(r.posterKey), width: r.posterWidth, height: r.posterHeight }
+      : null,
 });
 
 /** Jadwal yang belum selesai, terdekat lebih dulu. */

@@ -309,6 +309,10 @@ export const agendaEvents = pgTable(
     capacity: integer("capacity"),
     /** Catatan singkat untuk peserta, mis. tema atau yang perlu dibawa. */
     note: text("note").notNull().default(""),
+    /** Poster acara (opsional) di bucket uploads: agenda/poster/<uuid>.jpg, beserta ukurannya. */
+    posterKey: text("poster_key"),
+    posterWidth: integer("poster_width"),
+    posterHeight: integer("poster_height"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
