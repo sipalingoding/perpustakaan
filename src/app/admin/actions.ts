@@ -4,13 +4,13 @@ import { and, desc, eq, inArray, isNotNull, notExists, sql } from "drizzle-orm";
 import { revalidatePath, updateTag } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
-import { bookCopies, books, donations, loans } from "@/db/schema";
+import { bookCopies, books, categories, donations, loans } from "@/db/schema";
 import { formatDay } from "@/lib/dates";
 import { fineFor, overdueDays, rupiah } from "@/lib/fine";
 import { formatHour } from "@/lib/library";
 import { LIBRARY_TZ } from "@/lib/server/members";
 import { notify } from "@/lib/server/notifications";
-import { CATEGORIES, titleOnly } from "@/lib/books";
+import { titleOnly } from "@/lib/books";
 import {
   downloadCover,
   normalizeIsbn,
@@ -78,9 +78,7 @@ const bookInput = z.object({
   id: z.uuid().optional(),
   title: z.string().trim().min(1, "Judul wajib diisi.").max(160, "Judul terlalu panjang."),
   author: z.string().trim().min(1, "Penulis wajib diisi.").max(160, "Nama penulis terlalu panjang."),
-  category: z.enum(CATEGORIES as [string, ...string[]], {
-    error: "Pilih kategori.",
-  }),
+  category: z.string({ error: "Pilih kategori." }).min(1, "Pilih kategori."),
   form: z.string().trim().min(1, "Isi bentuk buku, misalnya Novel.").max(40),
   year: optionalWholeNumber(
     "Tahun terbit",
@@ -172,6 +170,14 @@ export async function saveBook(form: FormData): Promise<
     return { ok: false, error: "Ada isian yang belum benar.", fields };
   }
   const v = parsed.data;
+  const [known] = await db.select({ name: categories.name }).from(categories).where(eq(categories.name, v.category));
+  if (!known) {
+    return {
+      ok: false,
+      error: "Ada isian yang belum benar.",
+      fields: { category: "Kategori ini baru saja dihapus atau diganti namanya. Muat ulang halaman lalu pilih lagi." },
+    };
+  }
 
   // Buku baru diberi id di sini supaya sampulnya bisa diunggah ke bucket sebelum barisnya ada.
   const bookId = v.id ?? crypto.randomUUID();
@@ -185,7 +191,7 @@ export async function saveBook(form: FormData): Promise<
     const values = {
       title: v.title,
       author: v.author,
-      category: v.category as (typeof books.$inferInsert)["category"],
+      category: v.category,
       form: v.form,
       year: v.year,
       pages: v.pages,

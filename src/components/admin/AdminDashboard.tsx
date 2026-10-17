@@ -2,18 +2,20 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { deleteBook } from "@/app/admin/actions";
 import { CatalogLink, EditLink, iconAction } from "@/components/admin/IconLink";
-import { Alert, Check, Plus, Search, Spinner, Trash } from "@/components/icons";
+import { Plus, Search, Trash } from "@/components/icons";
 import { ui } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import type { AdminBookRow } from "@/lib/server/admin";
+import { useToast } from "@/components/Toast";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 /** Dasbor pustakawan: semua judul di koleksi, dengan stok dan jalan pintas untuk mengubahnya. */
 export function AdminDashboard({ books }: { books: AdminBookRow[] }) {
   const [query, setQuery] = useState("");
-  const [notice, setNotice] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
+  const setNotice = useToast();
   const needle = query.trim().toLowerCase();
   const shown = needle
     ? books.filter((b) => `${b.title} ${b.author} ${b.shelf} ${b.category}`.toLowerCase().includes(needle))
@@ -65,19 +67,6 @@ export function AdminDashboard({ books }: { books: AdminBookRow[] }) {
         />
       </div>
 
-      <div role="status" aria-live="polite" className="empty:hidden">
-        {notice && (
-          <p
-            className={cn(
-              "m-0 mt-5 flex max-w-[64ch] animate-pop items-start gap-2.5 rounded-[14px] px-4 py-3 text-sm leading-snug font-semibold",
-              notice.kind === "ok" ? "bg-primary-100 text-primary-700" : "bg-accent-100 text-accent-700",
-            )}
-          >
-            {notice.kind === "ok" ? <Check size={20} className="mt-px shrink-0" /> : <Alert size={20} className="mt-px shrink-0" />}
-            {notice.text}
-          </p>
-        )}
-      </div>
 
       {books.length === 0 ? (
         <div className="mt-6 flex flex-col items-center gap-2 rounded-3xl border-[1.5px] border-dashed border-field px-6 py-14 text-center">
@@ -189,17 +178,6 @@ function DeleteBookButton({
   const router = useRouter();
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
-  const confirmButton = useRef<HTMLButtonElement>(null);
-  const trigger = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    if (confirming) confirmButton.current?.focus();
-  }, [confirming]);
-
-  const cancel = () => {
-    setConfirming(false);
-    requestAnimationFrame(() => trigger.current?.focus());
-  };
 
   const remove = async () => {
     setBusy(true);
@@ -208,9 +186,9 @@ function DeleteBookButton({
       if (result.ok) {
         onDone({ kind: "ok", text: `“${book.title}” dihapus dari katalog.` });
         router.refresh();
-        return;
+      } else {
+        onDone({ kind: "error", text: `“${book.title}” tidak dihapus. ${result.error}` });
       }
-      onDone({ kind: "error", text: `“${book.title}” tidak dihapus. ${result.error}` });
     } catch {
       onDone({ kind: "error", text: `“${book.title}” gagal dihapus. Periksa koneksi lalu coba lagi.` });
     }
@@ -229,48 +207,28 @@ function DeleteBookButton({
     );
   }
 
-  if (confirming) {
-    return (
-      <span
-        role="group"
-        aria-label={`Konfirmasi hapus ${book.title}`}
-        className="ml-1 inline-flex items-center gap-1.5 align-middle"
-        onKeyDown={(e) => e.key === "Escape" && !busy && cancel()}
-      >
-        <span className="text-[13px] font-semibold text-accent-700">Hapus?</span>
-        <button
-          ref={confirmButton}
-          type="button"
-          onClick={remove}
-          disabled={busy}
-          aria-busy={busy}
-          className="inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-full border-0 bg-accent-700 px-3.5 text-[13px] font-semibold text-cream disabled:cursor-wait"
-        >
-          {busy && <Spinner size={16} />}
-          Ya, hapus
-        </button>
-        <button
-          type="button"
-          onClick={cancel}
-          disabled={busy}
-          className="inline-flex min-h-11 cursor-pointer items-center rounded-full border-0 bg-transparent px-3 text-[13px] font-semibold text-ink-2 hover:bg-hover"
-        >
-          Batal
-        </button>
-      </span>
-    );
-  }
-
   return (
-    <button
-      ref={trigger}
-      type="button"
-      aria-label={`Hapus ${book.title}`}
-      title={`Hapus ${book.title}`}
-      onClick={() => setConfirming(true)}
-      className={cn(iconAction, "align-middle hover:bg-accent-100 hover:text-accent-700")}
-    >
-      <Trash size={22} />
-    </button>
+    <>
+      <button
+        type="button"
+        aria-label={`Hapus ${book.title}`}
+        title={`Hapus ${book.title}`}
+        aria-haspopup="dialog"
+        onClick={() => setConfirming(true)}
+        className={cn(iconAction, "align-middle hover:bg-accent-100 hover:text-accent-700")}
+      >
+        <Trash size={22} />
+      </button>
+      {confirming && (
+        <ConfirmDialog
+          title={`Hapus “${book.title}”?`}
+          busy={busy}
+          onConfirm={remove}
+          onCancel={() => setConfirming(false)}
+        >
+          Buku ini belum pernah dipinjam, jadi akan dihapus dari katalog beserta sampulnya. Tidak bisa dibatalkan.
+        </ConfirmDialog>
+      )}
+    </>
   );
 }

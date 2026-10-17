@@ -5,13 +5,18 @@ import { Search, Spinner } from "@/components/icons";
 import { ui } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import type { SearchResponse, SourceBook } from "@/lib/server/book-sources";
+import { useErrorToast } from "@/components/Toast";
 
 export const SOURCE_NAME: Record<SourceBook["source"], string> = {
+  perpusnas: "Perpusnas",
   openlibrary: "Open Library",
   google: "Google Books",
 };
 
-/** Pencarian buku di katalog publik (Open Library, dan Google Books bila ada kuncinya). Dipakai admin dan formulir sumbangan. */
+/**
+ * Pencarian buku di katalog publik (data ISBN Perpusnas, Open Library, dan Google Books bila ada kuncinya).
+ * Dipakai admin dan formulir sumbangan.
+ */
 export function SourceSearch({
   search,
   onPick,
@@ -35,8 +40,8 @@ export function SourceSearch({
   const [state, setState] = useState<{
     results: SourceBook[];
     failed: string[];
-    error?: string;
   } | null>(null);
+  const setError = useErrorToast();
   const [picked, setPicked] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
 
@@ -45,15 +50,13 @@ export function SourceSearch({
     setBusy(true);
     try {
       const r = await search(query);
-      setState(r.ok ? { results: r.results, failed: r.failed } : { results: [], failed: [], error: r.error });
+      // Pencarian yang gagal tidak menghapus hasil sebelumnya; alasannya tampil sebagai notifikasi.
+      if (!r.ok) return setError(r.error);
+      setState({ results: r.results, failed: r.failed });
       setPicked(null);
       setShowAll(false);
     } catch {
-      setState({
-        results: [],
-        failed: [],
-        error: "Pencarian gagal. Periksa koneksi lalu coba lagi.",
-      });
+      setError("Pencarian gagal. Periksa koneksi lalu coba lagi.");
     } finally {
       setBusy(false);
     }
@@ -92,8 +95,7 @@ export function SourceSearch({
       </form>
 
       <div aria-live="polite">
-        {state?.error && <p className="mt-4 mb-0 text-sm font-semibold text-accent-700">{state.error}</p>}
-        {state && !state.error && state.results.length === 0 && (
+        {state && state.results.length === 0 && (
           <p className="mt-4 mb-0 text-sm text-ink-2">
             Tidak ada hasil. Coba kata lain atau ISBN-nya, atau isi formulir secara manual.
           </p>
@@ -135,7 +137,7 @@ export function SourceSearch({
                     <span className="line-clamp-2 text-sm leading-snug font-bold text-ink">{r.title}</span>
                     <span className="truncate text-[13px] text-ink-3">{r.author || "Penulis tidak diketahui"}</span>
                     <span className="text-xs text-muted">
-                      {[r.year, r.pages && `${r.pages} hlm`, SOURCE_NAME[r.source]].filter(Boolean).join(" · ")}
+                      {[r.year, r.pages && `${r.pages} hlm`, r.edition, SOURCE_NAME[r.source]].filter(Boolean).join(" · ")}
                     </span>
                   </span>
                 </button>

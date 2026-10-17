@@ -11,15 +11,15 @@ import {
 } from "@/app/admin/agenda/actions";
 import { ConfirmDelete } from "@/components/admin/ConfirmDelete";
 import { iconAction } from "@/components/admin/IconLink";
-import { Alert, Check, Cross, ImageIcon, Pencil, Plus, Spinner, Upload } from "@/components/icons";
+import { Check, Cross, ImageIcon, Pencil, Plus, Spinner, Upload } from "@/components/icons";
 import { ui } from "@/components/ui";
 import { AGENDA, AGENDA_KINDS, MAX_AGENDA_PHOTOS, type AgendaKind } from "@/lib/agenda";
 import { cn } from "@/lib/cn";
 import { formatDay, formatShort } from "@/lib/dates";
 import { fitImage } from "@/lib/image";
 import type { AdminAgendaEvent, AgendaPhoto } from "@/lib/server/agenda";
+import { useErrorToast, useToast } from "@/components/Toast";
 
-type Notice = { kind: "ok" | "error"; text: string };
 
 const MAX_UPLOAD_BYTES = 950 * 1024;
 const NOTE_MAX = 280;
@@ -50,7 +50,7 @@ export function AdminAgenda({
   today: string;
 }) {
   const router = useRouter();
-  const [notice, setNotice] = useState<Notice | null>(null);
+  const setNotice = useToast();
   const [editing, setEditing] = useState<AdminAgendaEvent | "new" | null>(null);
   const formPanel = useRef<HTMLDivElement>(null);
 
@@ -105,9 +105,6 @@ export function AdminAgenda({
         )}
       </div>
 
-      <div role="status" aria-live="polite" className="empty:hidden">
-        {notice && <NoticeLine notice={notice} />}
-      </div>
 
       {editing !== null && (
         <div ref={formPanel} className="scroll-mt-6">
@@ -160,24 +157,6 @@ export function AdminAgenda({
         </div>
       </section>
     </div>
-  );
-}
-
-function NoticeLine({ notice }: { notice: Notice }) {
-  return (
-    <p
-      className={cn(
-        "m-0 mt-5 flex max-w-[72ch] animate-pop items-start gap-2.5 rounded-[14px] px-4 py-3 text-sm leading-snug font-semibold",
-        notice.kind === "ok" ? "bg-primary-100 text-primary-700" : "bg-accent-100 text-accent-700",
-      )}
-    >
-      {notice.kind === "ok" ? (
-        <Check size={20} className="mt-px shrink-0" />
-      ) : (
-        <Alert size={20} className="mt-px shrink-0" />
-      )}
-      {notice.text}
-    </p>
   );
 }
 
@@ -282,7 +261,12 @@ function EventTable({
                   )}
                   <ConfirmDelete
                     label={`Hapus ${label}`}
-                    question={onEdit && e.registered > 0 ? `Batalkan? ${e.registered} peserta dikabari.` : "Hapus?"}
+                    title={`Hapus ${label}?`}
+                    description={
+                      onEdit && e.registered > 0
+                        ? `Agenda ini batal. ${e.registered} peserta yang sudah mendaftar diberi kabar lewat notifikasi.`
+                        : "Jadwal ini hilang dari halaman Agenda dan tidak bisa dikembalikan."
+                    }
                     onConfirm={() => onDelete(e)}
                   />
                 </td>
@@ -326,7 +310,7 @@ function EventForm({
       : emptyForm(),
   );
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [error, setError] = useState("");
+  const setError = useErrorToast();
   const [saving, setSaving] = useState(false);
 
   const set = (patch: Partial<EventInput>) => {
@@ -523,9 +507,6 @@ function EventForm({
         <button type="button" onClick={onCancel} className={cn(ui.btn, ui.ghost)}>
           Batal
         </button>
-        <span role="status" aria-live="polite" className="text-sm font-semibold text-accent-700">
-          {error}
-        </span>
       </div>
     </form>
   );
@@ -543,7 +524,7 @@ function PhotoManager({ kind, photos }: { kind: AgendaKind; photos: AgendaPhoto[
   const [draft, setDraft] = useState<{ blob: Blob; url: string } | null>(null);
   const [caption, setCaption] = useState("");
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<Notice | null>(null);
+  const setNotice = useToast();
   const [refreshing, startRefresh] = useTransition();
   const full = photos.length >= MAX_AGENDA_PHOTOS;
 
@@ -638,6 +619,8 @@ function PhotoManager({ kind, photos }: { kind: AgendaKind; photos: AgendaPhoto[
                 <span className="line-clamp-2 min-w-0 text-xs text-ink-3">{p.caption || "Tanpa keterangan"}</span>
                 <ConfirmDelete
                   label={`Hapus foto ${i + 1} ${info.name}`}
+                  title={`Hapus foto ${i + 1}?`}
+                  description="Foto ini hilang dari halaman Agenda dan tidak bisa dikembalikan."
                   onConfirm={() => remove(p, i)}
                   className="shrink-0"
                 />
@@ -720,19 +703,6 @@ function PhotoManager({ kind, photos }: { kind: AgendaKind; photos: AgendaPhoto[
         </div>
       )}
 
-      <div role="status" aria-live="polite" className="empty:hidden">
-        {notice && (
-          <p
-            className={cn(
-              "m-0 flex items-start gap-2 text-[13px] font-semibold",
-              notice.kind === "ok" ? "text-primary-700" : "text-accent-700",
-            )}
-          >
-            {notice.kind === "error" && <Alert size={18} className="shrink-0" />}
-            {notice.text}
-          </p>
-        )}
-      </div>
     </section>
   );
 }

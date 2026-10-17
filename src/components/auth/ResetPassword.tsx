@@ -9,6 +9,7 @@ import { ArrowLeft, ArrowRight, Check, Mail, Spinner } from "@/components/icons"
 import { ui } from "@/components/ui";
 import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/cn";
+import { useErrorToast, useToast } from "@/components/Toast";
 
 type Step = "email" | "kode" | "selesai";
 
@@ -47,8 +48,14 @@ export function ResetPassword() {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState("");
-  const [info, setInfo] = useState("");
+  // Pesan tampil sebagai notifikasi; `invalid` hanya menandai kotak email yang ditolak.
+  const [invalid, setInvalid] = useState(false);
+  const errorToast = useErrorToast();
+  const notify = useToast();
+  const setError = (text: string) => {
+    setInvalid(!!text);
+    errorToast(text);
+  };
   const [cooldown, setCooldown] = useState(0);
   const [signedIn, setSignedIn] = useState(false);
   // Pindah halaman sebagai transisi, supaya tombol tidak tertinggal dalam keadaan sibuk di halaman yang disimpan Next.
@@ -79,7 +86,6 @@ export function ResetPassword() {
     }
     setPending(true);
     setError("");
-    setInfo("");
     try {
       const { error } = await authClient.emailOtp.sendVerificationOtp({ email: address, type: "forget-password" });
       if (error) {
@@ -103,12 +109,11 @@ export function ResetPassword() {
 
   const resend = async () => {
     setOtp("");
-    if (await sendCode()) setInfo("Kode baru sudah dikirim. Kode yang lama tidak berlaku lagi.");
+    if (await sendCode()) notify({ kind: "ok", text: "Kode baru sudah dikirim. Kode yang lama tidak berlaku lagi." });
   };
 
   const submitReset = async (e: FormEvent) => {
     e.preventDefault();
-    setInfo("");
     if (!/^\d{6}$/.test(otp)) return setError("Kodenya 6 angka. Salin dari email yang kami kirim.");
     if (password.length < MIN_PASSWORD) return setError(`Kata sandi baru minimal ${MIN_PASSWORD} karakter.`);
     if (password !== confirm) return setError("Kedua kata sandi belum sama. Ketik ulang, ya.");
@@ -201,12 +206,10 @@ export function ResetPassword() {
               placeholder="nama@email.com"
               autoComplete="email"
               required
-              aria-invalid={!!error}
-              aria-describedby={error ? "r-error" : undefined}
+              aria-invalid={invalid}
               className={ui.field}
             />
           </div>
-          <Alert id="r-error" message={error} />
           <button
             type="submit"
             disabled={pending}
@@ -279,10 +282,6 @@ export function ResetPassword() {
             autoComplete="new-password"
             required
           />
-          <Alert id="r-error" message={error} />
-          <div role="status" aria-live="polite" className="empty:hidden">
-            {info && <p className="m-0 text-sm font-semibold text-primary-700">{info}</p>}
-          </div>
           <button
             type="submit"
             disabled={pending}
@@ -299,8 +298,7 @@ export function ResetPassword() {
                 setStep("email");
                 setOtp("");
                 setError("");
-                setInfo("");
-              }}
+                          }}
               className="inline-flex min-h-11 cursor-pointer items-center gap-1.5 border-0 bg-transparent px-0 font-semibold text-ink-2 hover:text-ink"
             >
               <ArrowLeft size={18} />
@@ -335,7 +333,6 @@ export function ResetPassword() {
               ? "Kamu sudah masuk dengan kata sandi baru. Pakai kata sandi ini mulai sekarang, di perangkat mana pun."
               : "Kata sandi barumu sudah tersimpan. Masuk sekali lagi dengan kata sandi baru itu."}
           </p>
-          <Alert id="r-error" message={error} />
           {signedIn ? (
             <button
               type="button"
@@ -354,18 +351,6 @@ export function ResetPassword() {
             </Link>
           )}
         </div>
-      )}
-    </div>
-  );
-}
-
-function Alert({ id, message }: { id: string; message: string }) {
-  return (
-    <div role="alert" className="empty:hidden">
-      {message && (
-        <p id={id} className="m-0 rounded-[14px] bg-accent-50 px-4 py-3 text-sm leading-snug text-accent-700">
-          {message}
-        </p>
       )}
     </div>
   );

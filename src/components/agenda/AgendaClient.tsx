@@ -5,15 +5,15 @@ import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { joinEvent, leaveEvent } from "@/app/agenda/actions";
 import { PhotoGallery } from "@/components/agenda/PhotoGallery";
-import { Alert, ArrowRight, Check, Clock, MapPin, People, Spinner } from "@/components/icons";
+import { ArrowRight, Check, Clock, MapPin, People, Spinner } from "@/components/icons";
 import { AgendaEmblem } from "@/components/illustrations/AgendaEmblem";
 import { ui } from "@/components/ui";
 import { AGENDA, AGENDA_KINDS, PARTNER, type AgendaKind } from "@/lib/agenda";
 import { cn } from "@/lib/cn";
 import { BULAN, formatDay, HARI } from "@/lib/dates";
 import type { AgendaEventView, AgendaPhoto } from "@/lib/server/agenda";
+import { useToast } from "@/components/Toast";
 
-type Notice = { kind: "ok" | "error"; text: string };
 
 const dateParts = (iso: string) => {
   const d = new Date(Date.parse(iso));
@@ -39,7 +39,7 @@ export function AgendaClient({
 }) {
   const router = useRouter();
   const [events, setEvents] = useState(initial);
-  const [notices, setNotices] = useState<Record<string, Notice>>({});
+  const notify = useToast();
   const [busyId, setBusyId] = useState<string | null>(null);
   const inFlight = useRef(false);
 
@@ -47,16 +47,12 @@ export function AgendaClient({
     if (inFlight.current) return;
     inFlight.current = true;
     setBusyId(e.id);
-    setNotices((n) => {
-      const rest = { ...n };
-      delete rest[e.id];
-      return rest;
-    });
     const leaving = e.mine;
+    const title = AGENDA[e.kind].name;
     try {
       const result = leaving ? await leaveEvent(e.id) : await joinEvent(e.id);
       if (!result.ok) {
-        setNotices((n) => ({ ...n, [e.id]: { kind: "error", text: result.error } }));
+        notify({ kind: "error", title, text: result.error });
         if (result.registered !== undefined) {
           const registered = result.registered;
           setEvents((all) => all.map((x) => (x.id === e.id ? { ...x, registered } : x)));
@@ -66,18 +62,16 @@ export function AgendaClient({
       setEvents((all) =>
         all.map((x) => (x.id === e.id ? { ...x, registered: result.registered, mine: result.mine } : x)),
       );
-      setNotices((n) => ({
-        ...n,
-        [e.id]: leaving
-          ? { kind: "ok", text: "Pendaftaranmu dibatalkan. Kursinya kembali terbuka untuk anggota lain." }
-          : { kind: "ok", text: "Kamu terdaftar. Pengingatnya sudah masuk ke lonceng notifikasi." },
-      }));
+      notify({
+        kind: "ok",
+        title,
+        text: leaving
+          ? "Pendaftaranmu dibatalkan. Kursinya kembali terbuka untuk anggota lain."
+          : "Kamu terdaftar. Pengingatnya sudah masuk ke lonceng notifikasi.",
+      });
       router.refresh();
     } catch {
-      setNotices((n) => ({
-        ...n,
-        [e.id]: { kind: "error", text: "Gagal menyimpan. Periksa koneksi lalu coba lagi." },
-      }));
+      notify({ kind: "error", title, text: "Gagal menyimpan. Periksa koneksi lalu coba lagi." });
     } finally {
       inFlight.current = false;
       setBusyId(null);
@@ -87,7 +81,7 @@ export function AgendaClient({
   const [next, ...later] = events;
   const nextOf = (kind: AgendaKind) => events.find((e) => e.kind === kind);
   const action = (e: AgendaEventView) => (
-    <EventAction event={e} signedIn={signedIn} busy={busyId === e.id} notice={notices[e.id]} onAct={() => act(e)} />
+    <EventAction event={e} signedIn={signedIn} busy={busyId === e.id} onAct={() => act(e)} />
   );
 
   return (
@@ -265,13 +259,11 @@ function EventAction({
   event: e,
   signedIn,
   busy,
-  notice,
   onAct,
 }: {
   event: AgendaEventView;
   signedIn: boolean;
   busy: boolean;
-  notice?: Notice;
   onAct: () => void;
 }) {
   const full = e.capacity !== null && e.registered >= e.capacity;
@@ -339,19 +331,6 @@ function EventAction({
   return (
     <div className="flex flex-col items-start gap-2">
       {control}
-      <div role="status" aria-live="polite" className="empty:hidden">
-        {notice && (
-          <p
-            className={cn(
-              "m-0 flex max-w-[44ch] animate-pop items-start gap-2 text-[13px] leading-snug font-semibold",
-              notice.kind === "ok" ? "text-primary-700" : "text-accent-700",
-            )}
-          >
-            {notice.kind === "error" && <Alert size={18} className="shrink-0" />}
-            {notice.text}
-          </p>
-        )}
-      </div>
     </div>
   );
 }

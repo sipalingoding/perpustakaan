@@ -8,6 +8,7 @@ import { Spinner } from "@/components/icons";
 import { authClient } from "@/lib/auth-client";
 import { clearActivity } from "@/lib/idle";
 import { cn } from "@/lib/cn";
+import { useToast } from "@/components/Toast";
 
 const item =
   "flex min-h-11 w-full cursor-pointer items-center rounded-[14px] border-0 bg-transparent px-3 text-left text-sm font-semibold text-ink-2 no-underline transition-colors hover:bg-tint hover:text-ink focus-visible:bg-tint focus-visible:text-ink";
@@ -36,7 +37,7 @@ export function ProfileMenu({
   // ditutup lebih dulu, supaya saat anggota masuk lagi menu ini tidak muncul terbuka dengan "Keluar" yang loading terus.
   const [navigating, startNavigation] = useTransition();
   const leaving = signingOut || navigating;
-  const [signOutError, setSignOutError] = useState("");
+  const notify = useToast();
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const items = useRef<HTMLElement[]>([]);
@@ -76,18 +77,18 @@ export function ProfileMenu({
 
   async function signOut() {
     setSigningOut(true);
-    setSignOutError("");
     try {
       const { error } = await authClient.signOut();
       if (error) throw error;
     } catch {
       setSigningOut(false);
-      setSignOutError("Gagal keluar. Periksa koneksi lalu coba lagi.");
+      notify({ kind: "error", text: "Gagal keluar. Periksa koneksi lalu coba lagi." });
       return;
     }
     clearActivity();
     setSigningOut(false);
     setOpen(false);
+    notify({ kind: "ok", text: "Kamu sudah keluar. Sampai jumpa lagi." });
     startNavigation(() => {
       router.push("/masuk");
       router.refresh();
@@ -168,11 +169,6 @@ export function ProfileMenu({
             Keluar
             {leaving && <Spinner size={18} />}
           </button>
-          {signOutError && (
-            <p role="alert" className="m-0 px-3 pt-1 pb-2 text-[13px] leading-snug font-semibold text-accent-700">
-              {signOutError}
-            </p>
-          )}
         </div>
       )}
     </div>

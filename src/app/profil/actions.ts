@@ -1,14 +1,15 @@
 "use server";
 
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import sharp from "sharp";
 import { z } from "zod";
-import { bookCopies, books, category, loans, profiles, user } from "@/db/schema";
+import { bookCopies, books, categories, loans, profiles, user } from "@/db/schema";
 import { AVATAR_PRESETS } from "@/lib/people";
 import { deleteFile, fileUrl, newFileKey, putFile } from "@/lib/server/storage";
 import { db } from "@/db";
 import { getViewer } from "@/lib/server/session";
+import { normalizePhone, PHONE_HINT } from "@/lib/phone";
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -18,11 +19,11 @@ const INVALID: ActionResult = { ok: false, error: "Isiannya belum benar. Periksa
 const account = z.object({
   name: z.string().trim().min(2).max(80),
   nickname: z.string().trim().min(1).max(30),
-  phone: z
-    .string()
-    .trim()
-    .max(20)
-    .regex(/^[0-9+\s-]*$/),
+  phone: z.string().transform((v, ctx) => {
+    const phone = normalizePhone(v);
+    if (!phone) ctx.addIssue({ code: "custom", message: v.trim() ? PHONE_HINT : "Nomor HP wajib diisi." });
+    return phone ?? "";
+  }),
   bio: z.string().trim().max(280),
 });
 
@@ -32,16 +33,22 @@ async function done(): Promise<ActionResult> {
   return { ok: true };
 }
 
-export async function saveAccount(input: z.input<typeof account>): Promise<ActionResult> {
+export async function saveAccount(
+  input: z.input<typeof account>,
+): Promise<ActionResult | { ok: false; error: string; fields: Record<string, string> }> {
   const viewer = await getViewer();
   if (!viewer) return SESSION_ENDED;
   const parsed = account.safeParse(input);
-  if (!parsed.success) return INVALID;
+  if (!parsed.success) {
+    const fields: Record<string, string> = {};
+    for (const issue of parsed.error.issues) fields[String(issue.path[0])] ??= issue.message;
+    return { ok: false, error: fields.phone ?? "Isiannya belum benar. Periksa lagi.", fields };
+  }
   const { name, nickname, phone, bio } = parsed.data;
 
   await db.transaction(async (tx) => {
     await tx.update(user).set({ name, updatedAt: new Date() }).where(eq(user.id, viewer.id));
-    await tx.update(profiles).set({ nickname, phone: phone || null, bio }).where(eq(profiles.userId, viewer.id));
+    await tx.update(profiles).set({ nickname, phone, bio }).where(eq(profiles.userId, viewer.id));
   });
   return done();
 }
@@ -88,7 +95,7 @@ export async function saveReadingProgress(
 }
 
 const preferences = z.object({
-  favs: z.array(z.enum(category.enumValues)).max(6),
+  favs: z.array(z.string().max(30)).max(100),
   notifs: z.object({ due: z.boolean(), fav: z.boolean(), recap: z.boolean() }),
 });
 
@@ -97,9 +104,17 @@ export async function savePreferences(input: z.input<typeof preferences>): Promi
   if (!viewer) return SESSION_ENDED;
   const parsed = preferences.safeParse(input);
   if (!parsed.success) return INVALID;
+  // Hanya kategori yang masih ada; yang baru dihapus pustakawan dibuang diam-diam.
+  const wanted = [...new Set(parsed.data.favs)];
+  const known =
+    wanted.length > 0
+      ? (await db.select({ name: categories.name }).from(categories).where(inArray(categories.name, wanted))).map(
+          (r) => r.name,
+        )
+      : [];
   await db
     .update(profiles)
-    .set({ favCategories: [...new Set(parsed.data.favs)], notifications: parsed.data.notifs })
+    .set({ favCategories: wanted.filter((c) => known.includes(c)), notifications: parsed.data.notifs })
     .where(eq(profiles.userId, viewer.id));
   return done();
 }

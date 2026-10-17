@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { ProfileSkeleton } from "@/components/Skeleton";
 import { PageShell } from "@/components/layout/PageShell";
 import { ProfileClient } from "@/components/profile/ProfileClient";
+import { getCategories } from "@/lib/server/categories";
 import { getProfilePage } from "@/lib/server/profile-page";
 import { requireViewer } from "@/lib/server/session";
 
@@ -20,7 +21,7 @@ export default function ProfilPage() {
 
 async function Profile() {
   const viewer = await requireViewer("/profil");
-  const data = await getProfilePage(viewer.id);
+  const [data, categories] = await Promise.all([getProfilePage(viewer.id), getCategories()]);
   if (!data) throw new Error("Profil anggota tidak ditemukan");
-  return <ProfileClient data={data} />;
+  return <ProfileClient data={data} categories={categories.map((c) => c.name)} />;
 }

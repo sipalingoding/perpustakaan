@@ -1,16 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { BookCard } from "@/components/catalog/BookCard";
+import { Pagination } from "@/components/catalog/Pagination";
 import { SortMenu, type SortOption } from "@/components/catalog/SortMenu";
 import { ArrowRight, Search } from "@/components/icons";
 import { LibraryHills } from "@/components/illustrations/LibraryHills";
 import { ui } from "@/components/ui";
-import { CATEGORIES, type Book, type Category } from "@/lib/books";
+import type { Book, Category } from "@/lib/books";
 import { cn } from "@/lib/cn";
 import { formatDay } from "@/lib/dates";
 import type { MyLoanSummary } from "@/lib/server/loans";
+
+/** Jumlah buku per halaman katalog. */
+const PER_PAGE = 8;
 
 type Sort = "rak" | "populer" | "rating" | "az" | "tersedia";
 const SORTS: SortOption<Sort>[] = [
@@ -21,19 +25,40 @@ const SORTS: SortOption<Sort>[] = [
   { value: "tersedia", label: "Tersedia", hint: "Yang bisa langsung dipinjam di atas" },
 ];
 
-export function KatalogClient({ books: all, myLoans }: { books: Book[]; myLoans: MyLoanSummary[] }) {
+export function KatalogClient({
+  books: all,
+  myLoans,
+  categories,
+}: {
+  books: Book[];
+  myLoans: MyLoanSummary[];
+  categories: Category[];
+}) {
   const nearest = myLoans[0];
   const [category, setCategory] = useState<Category | "Semua">("Semua");
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<Sort>("rak");
   // Dinaikkan setiap filter berubah supaya kartu muncul ulang dengan animasi.
   const [round, setRound] = useState(0);
+  const [page, setPage] = useState(1);
+  const heading = useRef<HTMLHeadingElement>(null);
 
+  // Saringan, pencarian, atau urutan baru selalu mulai dari halaman pertama.
   const refilter = (patch: { category?: Category | "Semua"; query?: string; sort?: Sort }) => {
     if (patch.category !== undefined) setCategory(patch.category);
     if (patch.query !== undefined) setQuery(patch.query);
     if (patch.sort !== undefined) setSort(patch.sort);
+    setPage(1);
     setRound((r) => r + 1);
+  };
+
+  /** Pindah halaman lalu kembali ke judul Katalog, supaya halaman baru dibaca dari atas (juga oleh pembaca layar). */
+  const goTo = (next: number) => {
+    setPage(next);
+    setRound((r) => r + 1);
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    document.getElementById("katalog")?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+    heading.current?.focus({ preventScroll: true });
   };
 
   const needle = query.trim().toLowerCase();
@@ -59,6 +84,11 @@ export function KatalogClient({ books: all, myLoans }: { books: Book[]; myLoans:
   if (sort === "tersedia") {
     books = [...books].sort((a, b) => Number(a.status !== "tersedia") - Number(b.status !== "tersedia"));
   }
+
+  const pages = Math.max(1, Math.ceil(books.length / PER_PAGE));
+  const current = Math.min(page, pages);
+  const first = (current - 1) * PER_PAGE;
+  const shown = books.slice(first, first + PER_PAGE);
 
   return (
     <>
@@ -115,7 +145,10 @@ export function KatalogClient({ books: all, myLoans }: { books: Book[]; myLoans:
               type="search"
               placeholder="Cari buku"
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setPage(1);
+              }}
               className="min-h-12 min-w-0 flex-1 border-0 bg-transparent text-base text-ink outline-none"
             />
             <a href="#katalog" className={cn(ui.btn, ui.primary, "min-h-12")}>
@@ -155,13 +188,18 @@ export function KatalogClient({ books: all, myLoans }: { books: Book[]; myLoans:
       <section id="katalog" className={cn(ui.wrap, "flex scroll-mt-6 flex-col gap-[22px] pt-[72px]")}>
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="flex items-baseline gap-3.5">
-            <h2 className="display m-0 text-5xl leading-none">Katalog</h2>
-            <span className="text-sm font-semibold text-muted">{books.length} judul</span>
+            <h2 ref={heading} tabIndex={-1} className="display m-0 text-5xl leading-none focus:outline-none">
+              Katalog
+            </h2>
+            <span className="text-sm font-semibold text-muted">
+              {books.length} judul
+              {pages > 1 && ` · halaman ${current} dari ${pages}`}
+            </span>
           </div>
           <SortMenu label="Urutkan" value={sort} options={SORTS} onChange={(s) => refilter({ sort: s })} />
         </div>
         <div className="flex flex-wrap gap-2.5">
-          {(["Semua", ...CATEGORIES] as const).map((c) => (
+          {["Semua", ...categories].map((c) => (
             <button
               key={c}
               type="button"
@@ -175,10 +213,12 @@ export function KatalogClient({ books: all, myLoans }: { books: Book[]; myLoans:
         </div>
 
         <div className="mt-[18px] grid grid-cols-2 gap-x-5 gap-y-9 min-[561px]:grid-cols-[repeat(auto-fill,minmax(230px,1fr))] min-[561px]:gap-x-9 min-[561px]:gap-y-[52px]">
-          {books.map((book, i) => (
+          {shown.map((book, i) => (
             <BookCard key={`${book.slug}-${round}`} book={book} style={{ animationDelay: `${i * 70}ms` }} />
           ))}
         </div>
+
+        <Pagination page={current} total={pages} onChange={goTo} className="mt-4" />
 
         {books.length === 0 && all.length === 0 && (
           <div className="flex flex-col items-center gap-2 rounded-3xl border-[1.5px] border-dashed border-field px-6 py-14 text-center">

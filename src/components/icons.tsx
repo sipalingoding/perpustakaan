@@ -15,6 +15,7 @@ import {
   mdiChevronDown,
   mdiChevronLeft,
   mdiChevronRight,
+  mdiChevronUp,
   mdiClipboardTextOutline,
   mdiClose,
   mdiCoffeeOutline,
@@ -58,6 +59,7 @@ export const ArrowLeft = (p: IconProps) => <Icon path={mdiArrowLeft} {...p} />;
 export const ChevronLeft = (p: IconProps) => <Icon path={mdiChevronLeft} {...p} />;
 export const ChevronRight = (p: IconProps) => <Icon path={mdiChevronRight} {...p} />;
 export const ChevronDown = (p: IconProps) => <Icon path={mdiChevronDown} {...p} />;
+export const ChevronUp = (p: IconProps) => <Icon path={mdiChevronUp} {...p} />;
 export const Bell = (p: IconProps) => <Icon path={mdiBellOutline} size={22} {...p} />;
 export const Search = (p: IconProps) => <Icon path={mdiMagnify} size={22} {...p} />;
 export const Check = (p: IconProps) => <Icon path={mdiCheck} {...p} />;

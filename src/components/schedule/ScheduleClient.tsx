@@ -2,11 +2,11 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useState, useTransition } from "react";
-import { setDueReminder, type ReturnResult } from "@/app/jadwal/actions";
+import { useState, useTransition } from "react";
+import { setDueReminder } from "@/app/jadwal/actions";
 import { Alert, ArrowRight, ChevronLeft, ChevronRight, Clock, ReturnBook } from "@/components/icons";
 import { ReturnDialog } from "@/components/schedule/ReturnDialog";
-import { Toast } from "@/components/Toast";
+import { useToast } from "@/components/Toast";
 import { Hourglass } from "@/components/illustrations/Hourglass";
 import { OverdueClock } from "@/components/illustrations/OverdueClock";
 import { RoundButton } from "@/components/RoundButton";
@@ -54,12 +54,10 @@ export function ScheduleClient({ data }: { data: ScheduleData }) {
   const [flips, setFlips] = useState(0);
   const [selected, setSelected] = useState(today);
   const [remind, setRemind] = useState(data.remind);
-  const [notice, setNotice] = useState("");
+  const notify = useToast();
   const [, startTransition] = useTransition();
   const router = useRouter();
   const [returning, setReturning] = useState<ScheduleLoan | null>(null);
-  const [returned, setReturned] = useState<Extract<ReturnResult, { ok: true }> | null>(null);
-  const closeToast = useCallback(() => setReturned(null), []);
 
   /** Buku aktif yang lewat batas kembali. */
   const isLate = (l: ScheduleLoan) => l.status === "active" && l.due < today;
@@ -137,8 +135,13 @@ export function ScheduleClient({ data }: { data: ScheduleData }) {
       const result = await setDueReminder(next);
       if (!result.ok) {
         setRemind(!next);
-        setNotice(result.error);
+        notify({ kind: "error", text: result.error });
+        return;
       }
+      notify({
+        kind: "ok",
+        text: next ? "Pengingat menyala: kami kabari 2 hari sebelum jatuh tempo." : "Pengingat jatuh tempo dimatikan.",
+      });
     });
   };
 
@@ -398,10 +401,7 @@ export function ScheduleClient({ data }: { data: ScheduleData }) {
                     ) : (
                       <button
                         type="button"
-                        onClick={() => {
-                          setReturned(null);
-                          setReturning(l);
-                        }}
+                        onClick={() => setReturning(l)}
                         className={cn(ui.btn, ui.ghost, "min-h-11 self-start px-4 text-sm")}
                       >
                         <ReturnBook size={18} />
@@ -412,14 +412,6 @@ export function ScheduleClient({ data }: { data: ScheduleData }) {
                 </article>
               );
             })}
-            {notice && (
-              <p
-                role="status"
-                className="mt-1 mb-0 rounded-[14px] bg-accent-50 px-3.5 py-2.5 text-[13px] leading-snug text-accent-700"
-              >
-                {notice}
-              </p>
-            )}
             <p className="mt-2 mb-0 border-t border-line-2 pt-3 text-[13px] leading-relaxed text-ink-3">
               Keterlambatan dikenai denda {rupiah(FINE_PER_DAY)} per hari.
             </p>
@@ -462,20 +454,6 @@ export function ScheduleClient({ data }: { data: ScheduleData }) {
         </aside>
       </div>
 
-      <Toast title={returned ? "Pengembalian diajukan" : null} onClose={closeToast}>
-        {returned && (
-          <>
-            Serahkan “{returned.title}” ke meja sirkulasi; statusnya berubah setelah pustakawan menerimanya.{" "}
-            {returned.fine > 0 && `Denda sampai hari ini ${rupiah(returned.fine)}. `}
-            {returned.reviewed && (
-              <>
-                Ulasanmu sudah tampil di <Link href={`/buku/${returned.slug}`}>halaman buku</Link>.
-              </>
-            )}
-          </>
-        )}
-      </Toast>
-
       {returning && (
         <ReturnDialog
           loan={returning}
@@ -483,7 +461,18 @@ export function ScheduleClient({ data }: { data: ScheduleData }) {
           onClose={() => setReturning(null)}
           onReturned={(result) => {
             setReturning(null);
-            setReturned(result);
+            notify({
+              kind: "ok",
+              title: "Pengembalian diajukan",
+              text: [
+                `Serahkan “${result.title}” ke meja sirkulasi; statusnya berubah setelah pustakawan menerimanya.`,
+                result.fine > 0 && `Denda sampai hari ini ${rupiah(result.fine)}.`,
+                result.reviewed && "Ulasanmu sudah tampil di halaman buku.",
+              ]
+                .filter(Boolean)
+                .join(" "),
+              action: result.reviewed ? { href: `/buku/${result.slug}`, label: "Lihat ulasan" } : undefined,
+            });
             startTransition(() => router.refresh());
           }}
         />

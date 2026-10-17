@@ -11,11 +11,19 @@ export function PasswordField({
   label,
   aside,
   hint,
+  fieldClassName = ui.field,
   ...input
-}: { id: string; label: string; aside?: ReactNode; hint?: ReactNode } & Omit<ComponentProps<"input">, "type">) {
+}: {
+  id: string;
+  label: string;
+  aside?: ReactNode;
+  hint?: ReactNode;
+  /** Kelas kotak isian, mis. versi ringkas di halaman Masuk. */
+  fieldClassName?: string;
+} & Omit<ComponentProps<"input">, "type">) {
   const [visible, setVisible] = useState(false);
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-1.5">
       <div className="flex items-center justify-between gap-3">
         <label className={ui.label} htmlFor={id}>
           {label}
@@ -23,7 +31,7 @@ export function PasswordField({
         {aside}
       </div>
       <div className="relative">
-        <input id={id} type={visible ? "text" : "password"} className={cn(ui.field, "pr-14")} {...input} />
+        <input id={id} type={visible ? "text" : "password"} className={cn(fieldClassName, "pr-14")} {...input} />
         <button
           type="button"
           onClick={() => setVisible((v) => !v)}

@@ -4,6 +4,7 @@ import "@fontsource/poppins/latin-500.css";
 import "@fontsource/poppins/latin-600.css";
 import "@fontsource/poppins/latin-700.css";
 import "./globals.css";
+import { ToastProvider } from "@/components/Toast";
 
 export const metadata: Metadata = {
   title: {
@@ -17,7 +18,9 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="id" className="h-full">
-      <body className="min-h-full">{children}</body>
+      <body className="min-h-full">
+        <ToastProvider>{children}</ToastProvider>
+      </body>
     </html>
   );
 }

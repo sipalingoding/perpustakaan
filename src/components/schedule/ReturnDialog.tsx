@@ -7,6 +7,7 @@ import { ui } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { fineFor, overdueDays, rupiah } from "@/lib/fine";
 import type { ScheduleLoan } from "@/lib/server/schedule";
+import { useErrorToast } from "@/components/Toast";
 
 const LABELS = ["Tidak suka", "Kurang", "Lumayan", "Bagus", "Luar biasa"];
 const BODY_MAX = 1000;
@@ -32,7 +33,7 @@ export function ReturnDialog({
   const [hover, setHover] = useState(0);
   const [body, setBody] = useState(loan.myReview?.body ?? "");
   const [busy, setBusy] = useState<"review" | "plain" | null>(null);
-  const [error, setError] = useState("");
+  const setError = useErrorToast();
   const lateDays = overdueDays(loan.due, today);
   const shown = hover || rating;
 
@@ -183,12 +184,6 @@ export function ReturnDialog({
             </span>
           )}
         </label>
-
-        <div role="alert" className="empty:hidden">
-          {error && (
-            <p className="m-0 rounded-[14px] bg-accent-50 px-4 py-3 text-sm leading-snug text-accent-700">{error}</p>
-          )}
-        </div>
 
         <div className="flex flex-col gap-2.5 min-[480px]:flex-row-reverse min-[480px]:flex-wrap min-[480px]:items-center">
           <button

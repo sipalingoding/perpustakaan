@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { DonateSkeleton } from "@/components/Skeleton";
 import { DonateClient } from "@/components/donate/DonateClient";
 import { PageShell } from "@/components/layout/PageShell";
+import { getCategories } from "@/lib/server/categories";
 import { donationSchedule } from "@/lib/server/donations";
 import { getProfile } from "@/lib/server/members";
 import { requireViewer } from "@/lib/server/session";
@@ -21,6 +22,10 @@ export default function SumbangPage() {
 
 async function Sumbang() {
   const viewer = await requireViewer("/sumbang");
-  const [profile, schedule] = await Promise.all([getProfile(viewer.id), donationSchedule()]);
-  return <DonateClient donor={profile?.nickname ?? viewer.name} schedule={schedule} />;
+  const [profile, schedule, categories] = await Promise.all([
+    getProfile(viewer.id),
+    donationSchedule(),
+    getCategories(),
+  ]);
+  return <DonateClient donor={profile?.nickname ?? viewer.name} schedule={schedule} categories={categories} />;
 }

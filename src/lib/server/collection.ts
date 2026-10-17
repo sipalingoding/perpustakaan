@@ -1,8 +1,8 @@
 import "server-only";
 import { and, eq, like, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { bookCopies, books, donations } from "@/db/schema";
-import { titleOnly } from "@/lib/books";
+import { bookCopies, books, categories, donations } from "@/db/schema";
+import { FALLBACK_COVER, titleOnly } from "@/lib/books";
 import { downloadCover, openLibraryDescription } from "@/lib/server/book-sources";
 import { processCover } from "@/lib/server/covers";
 import { notify } from "@/lib/server/notifications";
@@ -49,15 +49,6 @@ export async function addCopies(tx: Tx, bookId: string, shelf: string, count: nu
 /** Rak sementara untuk buku sumbangan yang belum ditata pustakawan. */
 export const DONATION_SHELF = "SB";
 
-/** Warna sampul ilustrasi bawaan per kategori (sama dengan pratinjau di formulir sumbangan). */
-const CATEGORY_COVER: Record<string, [string, string]> = {
-  Fiksi: ["#4F6F66", "#F3F1E7"],
-  Sains: ["#5C7395", "#F6F4EC"],
-  Sejarah: ["#B9C7B0", "#23332D"],
-  Puisi: ["#74678F", "#FBF7EF"],
-  Anak: ["#E3BE9C", "#3A2E26"],
-  Lainnya: ["#C9D3D9", "#22323A"],
-};
 
 export class DonationStateError extends Error {}
 
@@ -78,7 +69,12 @@ export async function acceptDonation(donationId: string): Promise<AcceptedDonati
   // Sampul dan sinopsis diambil di luar transaksi (jaringan lambat tidak boleh menahan kunci database).
   // Gagal mengambil keduanya tidak menggagalkan penerimaan: buku tetap masuk dengan sampul ilustrasi.
   let coverKey: string | null = null;
-  let colors = CATEGORY_COVER[d.category] ?? CATEGORY_COVER.Lainnya;
+  // Warna sampul ilustrasi dari kategorinya (sama dengan pratinjau di formulir sumbangan).
+  const [tone] = await db
+    .select({ bg: categories.coverBg, ink: categories.coverInk })
+    .from(categories)
+    .where(eq(categories.name, d.category));
+  let colors: [string, string] = tone ? [tone.bg, tone.ink] : [FALLBACK_COVER.bg, FALLBACK_COVER.ink];
   let synopsis = "";
   const bookId = match?.id ?? crypto.randomUUID();
   if (!match) {

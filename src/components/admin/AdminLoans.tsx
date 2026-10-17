@@ -4,13 +4,15 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { approvePickup, approveReturn } from "@/app/admin/actions";
-import { Alert, Check, ReturnBook, Spinner } from "@/components/icons";
+import { MemberPhone } from "@/components/admin/MemberPhone";
+import { Check, ReturnBook, Spinner } from "@/components/icons";
 import { ui } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { formatShort } from "@/lib/dates";
 import { rupiah } from "@/lib/fine";
 import { formatHour } from "@/lib/library";
 import type { AdminLoan } from "@/lib/server/admin-loans";
+import { useToast } from "@/components/Toast";
 
 type Filter = "kembali" | "reserved" | "active" | "semua";
 
@@ -56,7 +58,7 @@ export function AdminLoans({ loans }: { loans: AdminLoan[] }) {
   const [kept, setKept] = useState<Set<string>>(new Set());
   const [busyId, setBusyId] = useState<string | null>(null);
   const inFlight = useRef(new Set<string>());
-  const [notice, setNotice] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
+  const setNotice = useToast();
 
   const shown =
     filter === "semua"
@@ -150,23 +152,6 @@ export function AdminLoans({ loans }: { loans: AdminLoan[] }) {
         ))}
       </div>
 
-      <div role="status" aria-live="polite" className="empty:hidden">
-        {notice && (
-          <p
-            className={cn(
-              "m-0 mt-5 flex max-w-[72ch] animate-pop items-start gap-2.5 rounded-[14px] px-4 py-3 text-sm leading-snug font-semibold",
-              notice.kind === "ok" ? "bg-primary-100 text-primary-700" : "bg-accent-100 text-accent-700",
-            )}
-          >
-            {notice.kind === "ok" ? (
-              <Check size={20} className="mt-px shrink-0" />
-            ) : (
-              <Alert size={20} className="mt-px shrink-0" />
-            )}
-            {notice.text}
-          </p>
-        )}
-      </div>
 
       <div className="relative mt-5 overflow-x-auto rounded-[22px] border border-line bg-paper">
         <table className="w-full min-w-[820px] border-collapse text-left text-sm">
@@ -205,6 +190,7 @@ export function AdminLoans({ loans }: { loans: AdminLoan[] }) {
                   <td className="px-3 py-3.5">
                     <span className="block font-semibold text-ink-2">{l.memberName}</span>
                     <span className="block text-[13px] break-all text-ink-3">{l.memberEmail}</span>
+                    <MemberPhone phone={l.memberPhone} name={l.memberName} />
                   </td>
                   <td className="px-3 py-3.5">
                     {reserved ? (

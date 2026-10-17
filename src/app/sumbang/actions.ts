@@ -1,10 +1,10 @@
 "use server";
 
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
-import { bookCondition, category, donationMethod, donations } from "@/db/schema";
+import { bookCondition, categories, donationMethod, donations } from "@/db/schema";
 import { isAllowedCoverUrl, normalizeIsbn, searchForForm, type SearchResponse } from "@/lib/server/book-sources";
 import { isOpenSlot } from "@/lib/server/donations";
 import { notify } from "@/lib/server/notifications";
@@ -16,7 +16,7 @@ const donation = z
   .object({
     title: z.string().trim().min(1).max(120),
     author: z.string().trim().min(1).max(80),
-    category: z.enum(category.enumValues),
+    category: z.string().min(1).max(30),
     condition: z.enum(bookCondition.enumValues),
     qty: z.number().int().min(1).max(20),
     note: z.string().trim().max(120),
@@ -49,6 +49,10 @@ export async function createDonation(input: z.input<typeof donation>): Promise<D
   const parsed = donation.safeParse(input);
   if (!parsed.success) return { ok: false, error: "Isiannya belum lengkap. Periksa judul, penulis, dan alamat." };
   const d = parsed.data;
+  const [known] = await db.select({ name: categories.name }).from(categories).where(eq(categories.name, d.category));
+  if (!known) {
+    return { ok: false, error: "Kategori itu baru saja diubah pustakawan. Muat ulang halaman lalu pilih kategori lagi." };
+  }
 
   // Tanggal dan jam hanya boleh salah satu dari pilihan yang ditawarkan, dihitung ulang di server (jam Jakarta).
   if (!(await isOpenSlot(d.scheduledOn, d.scheduledHour))) {

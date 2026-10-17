@@ -1,7 +1,7 @@
 import "server-only";
 import { and, eq, inArray, isNotNull, or, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { bookCopies, books, loans, user } from "@/db/schema";
+import { bookCopies, books, loans, profiles, user } from "@/db/schema";
 import { expireMissedPickups } from "@/lib/server/loans";
 import { LIBRARY_TZ } from "@/lib/server/members";
 
@@ -13,6 +13,8 @@ export type AdminLoan = {
   copyCode: string;
   memberName: string;
   memberEmail: string;
+  /** Nomor HP dari profil anggota; null bila belum diisi. */
+  memberPhone: string | null;
   /** Tanggal ambil (terbooking) atau tanggal diambil (dipinjam), "YYYY-MM-DD". */
   startOn: string;
   pickupHour: number | null;
@@ -40,6 +42,7 @@ export async function getAdminLoans(): Promise<AdminLoan[]> {
       copyCode: bookCopies.code,
       memberName: user.name,
       memberEmail: user.email,
+      memberPhone: profiles.phone,
       startOn: loans.startOn,
       pickupHour: loans.pickupHour,
       dueOn: loans.dueOn,
@@ -56,6 +59,7 @@ export async function getAdminLoans(): Promise<AdminLoan[]> {
     .innerJoin(bookCopies, eq(bookCopies.id, loans.copyId))
     .innerJoin(books, eq(books.id, bookCopies.bookId))
     .innerJoin(user, eq(user.id, loans.userId))
+    .leftJoin(profiles, eq(profiles.userId, loans.userId))
     .where(inArray(loans.status, ["reserved", "active"]))
     // Yang menunggu tindakan di atas: pengembalian yang diajukan, lalu booking, lalu yang sedang dipinjam.
     .orderBy(

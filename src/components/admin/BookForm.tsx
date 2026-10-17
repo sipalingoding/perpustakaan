@@ -5,15 +5,17 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
 import { deleteBook, getSourceSynopsis, saveBook, searchPublicBooks } from "@/app/admin/actions";
 import { CatalogLink } from "@/components/admin/IconLink";
-import { SOURCE_NAME, SourceSearch } from "@/components/SourceSearch";
+import { SourceSearch } from "@/components/SourceSearch";
 import { CoverMotif } from "@/components/catalog/CoverMotif";
-import { Alert, ArrowLeft, Check, ImageIcon, Spinner, Trash, Upload } from "@/components/icons";
+import { ArrowLeft, Check, ImageIcon, Spinner, Trash, Upload } from "@/components/icons";
 import { ui } from "@/components/ui";
-import { CATEGORIES, type Category, type Motif } from "@/lib/books";
+import type { Category, Motif } from "@/lib/books";
 import { cn } from "@/lib/cn";
 import { fitImage } from "@/lib/image";
 import type { BookFormValues } from "@/lib/server/admin";
 import type { SourceBook } from "@/lib/server/book-sources";
+import { useErrorToast, useToast } from "@/components/Toast";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 type Values = Omit<BookFormValues, "id" | "slug" | "coverImage" | "minCopies">;
 type CoverMode = "keep" | "remote" | "upload" | "none";
@@ -40,18 +42,31 @@ const MOTIFS: Array<{ value: Motif; label: string }> = [
 ];
 
 /** Formulir tambah dan ubah buku, dengan pencarian data dan sampul di katalog publik. */
-export function BookForm({ initial, created = false }: { initial: BookFormValues; created?: boolean }) {
+export function BookForm({
+  initial,
+  categories,
+  created = false,
+}: {
+  initial: BookFormValues;
+  /** Nama kategori dari /admin/kategori, menurut urutan tampil. */
+  categories: Category[];
+  created?: boolean;
+}) {
   const router = useRouter();
   const formId = useId();
   const isNew = !initial.id;
   const { id: bookId, slug, coverImage: initialImage, minCopies, ...start } = initial;
 
-  const [values, setValues] = useState<Values>(start);
+  // Kategori bawaan atau kategori lama yang sudah dihapus diganti ke kategori pertama yang ada.
+  const [values, setValues] = useState<Values>(() =>
+    categories.includes(start.category) ? start : { ...start, category: categories[0] ?? "" },
+  );
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [notice, setNotice] = useState<{
-    kind: "ok" | "error";
-    text: string;
-  } | null>(created ? { kind: "ok", text: "Buku ditambahkan ke katalog." } : null);
+  const setNotice = useToast();
+  // Buku baru: halaman ini dibuka lewat ?baru=1 setelah tersimpan, jadi kabar suksesnya muncul di sini.
+  useEffect(() => {
+    if (created) setNotice({ kind: "ok", text: "Buku ditambahkan ke katalog.", action: catalogAction(slug) });
+  }, [created, slug, setNotice]);
   const [saving, setSaving] = useState(false);
 
   // Sampul: gambar tersimpan, gambar dari pencarian, unggahan, atau ilustrasi (warna + motif).
@@ -59,7 +74,13 @@ export function BookForm({ initial, created = false }: { initial: BookFormValues
   const [coverMode, setCoverMode] = useState<CoverMode>(initialImage ? "keep" : "none");
   const [remoteCover, setRemoteCover] = useState<string | null>(null);
   const [upload, setUpload] = useState<{ blob: Blob; url: string } | null>(null);
-  const [coverNote, setCoverNote] = useState<string | null>(null);
+  // Pesan sampul tampil sebagai notifikasi; selama masih berlaku, tombol "Unggah sampul" ditonjolkan.
+  const [coverNote, setCoverNoteState] = useState<string | null>(null);
+  const coverToast = useErrorToast();
+  const setCoverNote = (text: string | null) => {
+    setCoverNoteState(text);
+    coverToast(text);
+  };
   const [preparing, setPreparing] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -110,11 +131,11 @@ export function BookForm({ initial, created = false }: { initial: BookFormValues
     } else {
       if (coverMode === "remote") setCoverMode(savedImage ? "keep" : "none");
       setCoverNote(
-        `${SOURCE_NAME[r.source]} tidak punya sampul untuk buku ini. Unggah foto sampulnya, atau pakai sampul ilustrasi dulu.`,
+        "Sampul buku ini belum ada di katalog publik. Unggah foto sampulnya, atau pakai sampul ilustrasi dulu.",
       );
     }
-    if (r.source === "openlibrary" && !r.synopsis) {
-      getSourceSynopsis(r.ref).then((text) => {
+    if (r.workKey && !r.synopsis) {
+      getSourceSynopsis(r.workKey).then((text) => {
         if (text) setValues((v) => (v.synopsis ? v : { ...v, synopsis: text }));
       });
     }
@@ -177,7 +198,7 @@ export function BookForm({ initial, created = false }: { initial: BookFormValues
         setUpload(null);
         setRemoteCover(null);
       }
-      setNotice({ kind: "ok", text: "Perubahan tersimpan." });
+      setNotice({ kind: "ok", text: "Perubahan tersimpan.", action: catalogAction(slug) });
       router.refresh();
     } catch {
       setNotice({
@@ -248,7 +269,7 @@ export function BookForm({ initial, created = false }: { initial: BookFormValues
                 Kategori <Req />
               </legend>
               <div className="flex flex-wrap gap-2">
-                {CATEGORIES.map((c) => (
+                {categories.map((c) => (
                   <label
                     key={c}
                     className={cn(
@@ -261,13 +282,20 @@ export function BookForm({ initial, created = false }: { initial: BookFormValues
                       name="kategori"
                       value={c}
                       checked={values.category === c}
-                      onChange={() => set("category", c as Category)}
+                      onChange={() => set("category", c)}
                       className="sr-only"
                     />
                     {c}
                   </label>
                 ))}
+                <Link
+                  href="/admin/kategori"
+                  className="inline-flex min-h-11 items-center px-2 text-sm font-semibold text-primary-600 underline-offset-4 hover:underline"
+                >
+                  Kelola kategori
+                </Link>
               </div>
+              <FieldError id={field("category")} text={errors.category} />
             </fieldset>
             <div className="grid grid-cols-[repeat(auto-fit,minmax(min(200px,100%),1fr))] gap-4">
               <TextInput id={field("form")} label="Bentuk" required list={`${formId}-forms`} {...bind("form")} />
@@ -364,15 +392,6 @@ export function BookForm({ initial, created = false }: { initial: BookFormValues
             onError={coverMode === "remote" ? onRemoteError : undefined}
             values={values}
           />
-          {coverNote && (
-            <p
-              role="status"
-              className="m-0 flex gap-2 rounded-[14px] bg-accent-100 px-3.5 py-3 text-sm leading-snug text-accent-700"
-            >
-              <Alert size={20} className="mt-px shrink-0" />
-              {coverNote}
-            </p>
-          )}
           <div className="flex flex-col gap-2">
             <button
               type="button"
@@ -427,20 +446,6 @@ export function BookForm({ initial, created = false }: { initial: BookFormValues
           <Link href="/admin" className={cn(ui.btn, ui.ghost)}>
             Batal
           </Link>
-          <span role="status" aria-live="polite">
-            {notice && (
-              <span
-                className={cn(
-                  "inline-flex animate-pop items-center gap-2 text-sm font-semibold",
-                  notice.kind === "ok" ? "text-primary-600" : "text-accent-700",
-                )}
-              >
-                {notice.kind === "ok" && <Check />}
-                {notice.text}
-                {notice.kind === "ok" && slug && <CatalogLink slug={slug} className="-my-2.5" />}
-              </span>
-            )}
-          </span>
         </div>
       </form>
 
@@ -538,7 +543,8 @@ function DangerZone({ id, title }: { id: string; title: string }) {
   const router = useRouter();
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const setError = useErrorToast();
+  const notify = useToast();
 
   const remove = async () => {
     setBusy(true);
@@ -551,6 +557,7 @@ function DangerZone({ id, title }: { id: string; title: string }) {
       // Tidak dibiarkan sibuk: Next menyimpan halaman ini beserta state-nya.
       setBusy(false);
       setConfirming(false);
+      notify({ kind: "ok", text: `“${title}” dihapus dari katalog.` });
       router.push("/admin");
       return;
     }
@@ -566,34 +573,20 @@ function DangerZone({ id, title }: { id: string; title: string }) {
         <p className="mt-1 mb-0 max-w-[60ch] text-sm text-ink-3">
           Hanya untuk buku yang belum pernah dipinjam, misalnya salah input. Buku dengan riwayat pinjam tetap tersimpan.
         </p>
-        {error && (
-          <p role="alert" className="mt-2 mb-0 text-sm font-semibold text-accent-700">
-            {error}
-          </p>
-        )}
       </div>
-      {confirming ? (
-        <div className="flex flex-wrap items-center gap-2.5" role="group" aria-label="Konfirmasi hapus">
-          <span className="text-sm font-semibold">Hapus “{title}”? Tidak bisa dibatalkan.</span>
-          <button
-            type="button"
-            className={cn(ui.btn, "bg-accent-700 text-cream")}
-            onClick={remove}
-            disabled={busy}
-            aria-busy={busy}
-          >
-            {busy ? <Spinner /> : <Trash />}
-            Ya, hapus
-          </button>
-          <button type="button" className={cn(ui.btn, ui.ghost)} onClick={() => setConfirming(false)} disabled={busy}>
-            Batal
-          </button>
-        </div>
-      ) : (
-        <button type="button" className={cn(ui.btn, ui.ghost)} onClick={() => setConfirming(true)}>
-          <Trash />
-          Hapus buku
-        </button>
+      <button type="button" className={cn(ui.btn, ui.ghost)} onClick={() => setConfirming(true)} aria-haspopup="dialog">
+        <Trash />
+        Hapus buku
+      </button>
+      {confirming && (
+        <ConfirmDialog
+          title={`Hapus “${title}”?`}
+          busy={busy}
+          onConfirm={remove}
+          onCancel={() => setConfirming(false)}
+        >
+          Buku ini dihapus dari katalog beserta sampulnya. Tidak bisa dibatalkan.
+        </ConfirmDialog>
       )}
     </section>
   );
@@ -661,4 +654,9 @@ function TextInput({
       <FieldError id={id} text={error} />
     </div>
   );
+}
+
+/** Tautan "Lihat di katalog" di notifikasi simpan, bila bukunya sudah punya alamat. */
+function catalogAction(slug: string | null | undefined) {
+  return slug ? { href: `/buku/${slug}`, label: "Lihat di katalog" } : undefined;
 }

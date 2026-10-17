@@ -3,7 +3,11 @@
  * Ganti dengan data dari basis data atau API saat aplikasi sudah tersambung.
  */
 
-export type Category = "Fiksi" | "Sains" | "Sejarah" | "Puisi" | "Anak" | "Lainnya";
+/** Nama kategori. Daftarnya dikelola pustakawan di /admin/kategori (tabel categories). */
+export type Category = string;
+export type CategoryInfo = { name: Category; cover: { bg: string; ink: string } };
+/** Warna sampul ilustrasi bila kategori sebuah buku tidak ditemukan (mis. daftar kategori kosong). */
+export const FALLBACK_COVER = { bg: "#C9D3D9", ink: "#22323A" };
 export type Motif = "rain" | "moon" | "waves" | "cup" | "ripple" | "lantern" | "wind" | "leaf";
 
 export type ReaderPage =
@@ -232,8 +236,6 @@ export const BOOKS: Book[] = [
     spreads: titleOnly("Cuplikan buku ini sedang disiapkan oleh pustakawan."),
   },
 ];
-
-export const CATEGORIES: Category[] = ["Fiksi", "Sains", "Sejarah", "Puisi", "Anak", "Lainnya"];
 
 export function getBook(slug: string) {
   return BOOKS.find((b) => b.slug === slug);

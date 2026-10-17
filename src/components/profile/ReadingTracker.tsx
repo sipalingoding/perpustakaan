@@ -10,6 +10,7 @@ import { cn } from "@/lib/cn";
 import { formatDay } from "@/lib/dates";
 import type { Gender } from "@/lib/people";
 import type { ReadingEntry } from "@/lib/server/profile-page";
+import { useToast } from "@/components/Toast";
 
 /** Tracker bacaan: buku yang sedang dipinjam, halaman terakhir yang dibaca dari total halamannya. */
 export function ReadingTracker({ entries, gender, name }: { entries: ReadingEntry[]; gender: Gender; name: string }) {
@@ -48,7 +49,9 @@ function TrackerRow({ entry }: { entry: ReadingEntry }) {
   const [saved, setSaved] = useState(entry.currentPage);
   const [value, setValue] = useState(String(entry.currentPage || ""));
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
+  const notify = useToast();
+  // Judul buku jadi judul notifikasi, karena beberapa buku bisa dicatat di halaman yang sama.
+  const setMessage = (m: { kind: "ok" | "error"; text: string } | null) => notify(m && { ...m, title: entry.title });
   const total = entry.pages;
   const pct = total ? Math.min(100, Math.round((saved / total) * 100)) : null;
   const done = total !== null && saved >= total;
@@ -159,9 +162,6 @@ function TrackerRow({ entry }: { entry: ReadingEntry }) {
             {busy ? <Spinner size={16} /> : <Check size={16} />}
             Simpan
           </button>
-          <span role="status" aria-live="polite" className="text-[13px] font-semibold">
-            {message && <span className={message.kind === "ok" ? "text-primary-600" : "text-accent-700"}>{message.text}</span>}
-          </span>
         </form>
       </div>
     </article>

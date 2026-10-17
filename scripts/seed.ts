@@ -54,6 +54,21 @@ async function main() {
     );
   }
 
+  /* ---------- kategori (migrasi 0017 sudah mengisinya; diisi ulang bila pustakawan sempat menghapus) ---------- */
+  await db
+    .insert(s.categories)
+    .values(
+      [
+        ["Fiksi", "#4F6F66", "#F3F1E7"],
+        ["Sains", "#5C7395", "#F6F4EC"],
+        ["Sejarah", "#B9C7B0", "#23332D"],
+        ["Puisi", "#74678F", "#FBF7EF"],
+        ["Anak", "#E3BE9C", "#3A2E26"],
+        ["Lainnya", "#C9D3D9", "#22323A"],
+      ].map(([name, coverBg, coverInk], position) => ({ name, coverBg, coverInk, position })),
+    )
+    .onConflictDoNothing();
+
   /* ---------- katalog dan eksemplar ---------- */
   const bookRows = await db
     .insert(s.books)
@@ -113,7 +128,7 @@ async function main() {
       gender: MALE.has(m.id) ? ("laki-laki" as const) : ("perempuan" as const),
       avatarLook: m.look!,
       bio: m.bio,
-      favCategories: [m.fav as (typeof s.category.enumValues)[number]],
+      favCategories: [m.fav],
       readingBookId: shelfBookId(m.reading) ?? null,
     })),
   );
@@ -200,7 +215,7 @@ async function main() {
   for (let i = 0; i < loanRows.length; i += 400) await db.insert(s.loans).values(loanRows.slice(i, i + 400));
 
   /* ---------- sumbangan terbaru ---------- */
-  const guessed: Record<string, (typeof s.category.enumValues)[number]> = {
+  const guessed: Record<string, string> = {
     "Rumah Lampu di Pesisir": "Fiksi",
     "Catatan Musim Kemarau": "Lainnya",
     "Ensiklopedia Kecil Awan": "Sains",

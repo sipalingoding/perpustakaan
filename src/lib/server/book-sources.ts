@@ -2,14 +2,20 @@ import "server-only";
 
 /**
  * Pencarian data buku di katalog publik, untuk mengisi formulir tambah buku.
- * Open Library selalu dipakai (tanpa kunci). Google Books ikut dicari bila GOOGLE_BOOKS_API_KEY diisi;
- * tanpa kunci, kuota bersamanya sering habis.
+ * - Perpusnas (data ISBN resmi Indonesia, isbn.perpusnas.go.id): paling lengkap dan terbaru untuk buku terbitan
+ *   Indonesia, sering dengan sinopsis dan jumlah halaman, tapi tanpa sampul. Ini endpoint yang dipakai halaman
+ *   pencarian situs itu sendiri, bukan API berdokumen, jadi bisa berubah; bila gagal, sumber lain tetap jalan.
+ * - Open Library (tanpa kunci): buku internasional, dan sampul banyak buku Indonesia lewat ISBN.
+ * - Google Books: hanya bila GOOGLE_BOOKS_API_KEY diisi; tanpa kunci kuota bersamanya sudah 0.
+ * Hasil Perpusnas dilengkapi sampul dan sinopsis dari sumber lain yang ISBN-nya sama.
  */
 
 export type SourceBook = {
-  source: "openlibrary" | "google";
-  /** Kunci di sumbernya: "/works/OL…W" untuk Open Library, id volume untuk Google Books. */
+  source: "perpusnas" | "openlibrary" | "google";
+  /** Kunci di sumbernya: ISBN untuk Perpusnas, "/works/OL…W" untuk Open Library, id volume untuk Google Books. */
   ref: string;
+  /** Karya Open Library ("/works/OL…W") untuk mengambil sinopsis nanti, bila dikenal. */
+  workKey: string | null;
   title: string;
   author: string;
   year: number | null;
@@ -21,6 +27,8 @@ export type SourceBook = {
   /** Gambar sampul ukuran besar untuk disimpan, dan versi kecil untuk daftar hasil. */
   cover: string | null;
   thumb: string | null;
+  /** Keterangan edisi singkat, mis. "Edisi digital". */
+  edition?: string | null;
 };
 
 const USER_AGENT = "Lembar/1.0 (aplikasi perpustakaan)";
@@ -88,7 +96,10 @@ type OpenLibraryDoc = {
   language?: string[];
 };
 
-async function searchOpenLibrary(query: string, isbn: string | null): Promise<SourceBook[]> {
+/** Hasil beserta semua ISBN edisinya, untuk dicocokkan dengan hasil Perpusnas. Tidak dikirim ke browser. */
+type Found = SourceBook & { isbns: string[] };
+
+async function searchOpenLibrary(query: string, isbn: string | null): Promise<Found[]> {
   const url = new URL("https://openlibrary.org/search.json");
   url.searchParams.set(isbn ? "isbn" : "q", isbn ?? query);
   url.searchParams.set("limit", "12");
@@ -100,6 +111,8 @@ async function searchOpenLibrary(query: string, isbn: string | null): Promise<So
   return docs.map((d) => ({
     source: "openlibrary",
     ref: d.key,
+    workKey: d.key,
+    isbns: d.isbn ?? [],
     title: d.subtitle ? `${d.title}: ${d.subtitle}` : d.title,
     author: (d.author_name ?? []).slice(0, 3).join(", "),
     year: d.first_publish_year ?? null,
@@ -135,7 +148,7 @@ const stripHtml = (s: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
-async function searchGoogle(query: string, isbn: string | null, key: string): Promise<SourceBook[]> {
+async function searchGoogle(query: string, isbn: string | null, key: string): Promise<Found[]> {
   const url = new URL("https://www.googleapis.com/books/v1/volumes");
   url.searchParams.set("q", isbn ? `isbn:${isbn}` : query);
   url.searchParams.set("maxResults", "10");
@@ -143,15 +156,18 @@ async function searchGoogle(query: string, isbn: string | null, key: string): Pr
   const { items = [] } = await getJson<{ items?: GoogleVolume[] }>(url.toString());
   return items.map(({ id, volumeInfo: v }) => {
     const image = v.imageLinks?.thumbnail?.replace(/^http:/, "https:").replace("&edge=curl", "") ?? null;
+    const isbns = v.industryIdentifiers?.map((i) => i.identifier) ?? [];
     return {
       source: "google",
       ref: id,
+      workKey: null,
+      isbns,
       title: v.subtitle ? `${v.title}: ${v.subtitle}` : v.title,
       author: (v.authors ?? []).slice(0, 3).join(", "),
       year: Number(v.publishedDate?.slice(0, 4)) || null,
       pages: v.pageCount || null,
       publisher: v.publisher ?? "",
-      isbn: pickIsbn(v.industryIdentifiers?.map((i) => i.identifier)),
+      isbn: pickIsbn(isbns),
       language: (v.language && LANGUAGES[v.language]) ?? null,
       synopsis: v.description ? stripHtml(v.description) : "",
       cover: image,
@@ -160,19 +176,175 @@ async function searchGoogle(query: string, isbn: string | null, key: string): Pr
   });
 }
 
+type PerpusnasRow = {
+  title: string;
+  kepeng?: string;
+  nama_penerbit?: string;
+  tahun_terbit?: string;
+  code?: string;
+  jml_hlm?: string;
+  sinopsis?: string;
+  jenis_media?: string;
+  jenis_kategori?: string;
+};
+
+const PERPUSNAS_URL = "https://isbn.perpusnas.go.id/landing_page/serverside_search2";
+
+/** Satu pencarian Perpusnas. `field` null = cari ISBN persis; selain itu frasa di judul ("title") atau pengarang ("kepeng"). */
+async function perpusnasQuery(value: string, field: "title" | "kepeng" | null): Promise<PerpusnasRow[]> {
+  const url = new URL(PERPUSNAS_URL);
+  url.searchParams.set("draw", "1");
+  url.searchParams.set("start", "0");
+  url.searchParams.set("length", "10");
+  url.searchParams.set("jenis_media", "all");
+  if (field) {
+    // Pencarian biasa mencocokkan kata mana pun; pencarian lanjutan mencocokkan frasa utuh di satu kolom.
+    url.searchParams.set("search", "");
+    url.searchParams.set("filter_by", "all");
+    url.searchParams.set("advanced_search[0][field]", field);
+    url.searchParams.set("advanced_search[0][value]", value);
+  } else {
+    url.searchParams.set("search", value);
+    url.searchParams.set("filter_by", "code");
+  }
+  const { data } = await getJson<{ data?: PerpusnasRow[] }>(url.toString());
+  return data ?? [];
+}
+
+/** "Pramoedya Ananta Toer ; editor, Astuti" -> "Pramoedya Ananta Toer"; "penulis dan ilustrator, Andrea" -> "Andrea". */
+function perpusnasAuthor(kepeng = "") {
+  return kepeng
+    .split(";")[0]
+    .replace(/^\s*(penulis dan ilustrator|penulis|pengarang|penyusun|karya|oleh|editor|ilustrator)\s*,?\s*/i, "")
+    .trim();
+}
+
+async function searchPerpusnas(query: string, isbn: string | null): Promise<Found[]> {
+  const rows = isbn
+    ? await perpusnasQuery(isbn, null)
+    : // Judul dan pengarang dicari bersamaan; hasil judul didahulukan.
+      (await Promise.all([perpusnasQuery(query, "title"), perpusnasQuery(query, "kepeng")])).flat();
+
+  const seen = new Set<string>();
+  const books: Found[] = [];
+  for (const r of rows) {
+    const code = r.code && normalizeIsbn(r.code);
+    if (!code || seen.has(code)) continue;
+    seen.add(code);
+    const digital = r.jenis_media !== undefined && r.jenis_media !== "cetak";
+    books.push({
+      source: "perpusnas",
+      ref: code,
+      workKey: null,
+      isbns: [code],
+      // Judul edisi digital diberi tanda "[sumber elektronis]"; tandanya dibuang, keterangan edisinya dicatat di bawah.
+      title: r.title.replace(/\s*\[sumber elektronis\]\s*/i, " ").replace(/\s+/g, " ").trim(),
+      author: perpusnasAuthor(r.kepeng),
+      year: Number(r.tahun_terbit) || null,
+      pages: Number(r.jml_hlm) || null,
+      publisher: r.nama_penerbit?.trim() ?? "",
+      isbn: code,
+      // Semua buku ber-ISBN Indonesia; yang terjemahan ditandai Perpusnas, bahasanya tidak selalu Indonesia.
+      language: r.jenis_kategori === "non terjemahan" ? "Indonesia" : null,
+      synopsis: r.sinopsis?.trim() ?? "",
+      cover: null,
+      thumb: null,
+      edition: digital ? "Edisi digital" : null,
+    });
+  }
+  // Edisi cetak didahulukan: itu yang biasanya ada di rak.
+  return books.sort((a, b) => Number(!!a.edition) - Number(!!b.edition));
+}
+
+/**
+ * Sampul Open Library menurut ISBN, bila ada. Dicek dulu karena alamat ISBN tanpa sampul mengembalikan 404.
+ * Kuota Open Library untuk pencarian sampul per ISBN terbatas, jadi hanya dipakai untuk beberapa hasil teratas.
+ */
+async function openLibraryCoverByIsbn(isbn: string) {
+  const res = await fetch(`https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg?default=false`, {
+    method: "HEAD",
+    headers: { "User-Agent": USER_AGENT },
+    redirect: "manual",
+    signal: AbortSignal.timeout(2500),
+    cache: "no-store",
+  });
+  if (res.status < 300 || res.status >= 400) return null;
+  return {
+    cover: `https://covers.openlibrary.org/b/isbn/${isbn}-L.jpg?default=false`,
+    thumb: `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg`,
+  };
+}
+
+/** "Bumi Manusia: Roman" -> "bumi manusia roman", untuk membandingkan judul antarsumber. */
+const plain = (s: string) =>
+  s
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+/** Nama belakang pengarang pertama: "Pramoedya Ananta Toer" -> "toer". */
+const surname = (author: string) => plain(author.split(",")[0]).split(" ").pop() ?? "";
+
+/** Karya yang sama dari edisi lain: judul utama sama dan nama belakang pengarang pertama sama. */
+function sameWork(a: SourceBook, b: SourceBook) {
+  const title = (t: string) => plain(t.split(/[:;]/)[0]);
+  return !!a.author && !!b.author && title(a.title) === title(b.title) && surname(a.author) === surname(b.author);
+}
+
+/** Berapa hasil Perpusnas tanpa sampul yang dicarikan sampulnya per ISBN di Open Library. */
+const COVER_LOOKUPS = 6;
+
 /** Cari di semua sumber sekaligus. Sumber yang gagal dilewati; `failed` menyebut yang gagal. */
-export async function searchSources(query: string) {
+export async function searchSources(query: string): Promise<{ results: SourceBook[]; failed: string[] }> {
   const isbn = normalizeIsbn(query);
   const key = process.env.GOOGLE_BOOKS_API_KEY;
-  const jobs: Array<[string, Promise<SourceBook[]>]> = [["Open Library", searchOpenLibrary(query, isbn)]];
+  const jobs: Array<[string, Promise<Found[]>]> = [
+    ["Perpusnas", searchPerpusnas(query, isbn)],
+    ["Open Library", searchOpenLibrary(query, isbn)],
+  ];
   if (key) jobs.push(["Google Books", searchGoogle(query, isbn, key)]);
 
   const settled = await Promise.allSettled(jobs.map(([, p]) => p));
-  const results = settled.flatMap((r) => (r.status === "fulfilled" ? r.value : []));
   const failed = jobs.filter((_, i) => settled[i].status === "rejected").map(([name]) => name);
-  // Yang punya sampul didahulukan: itulah alasan utama mencari di sini.
-  results.sort((a, b) => Number(!a.cover) - Number(!b.cover));
-  return { results: results.slice(0, 16), failed };
+  const [perpusnas, ...others] = settled.map((r) => (r.status === "fulfilled" ? r.value : []));
+  const rest = others.flat();
+
+  // Buku yang sama di sumber lain melengkapi data Perpusnas, lalu tidak ditampilkan dua kali. Yang ISBN-nya sama
+  // didahulukan; bila tidak ada, karya yang sama (judul sama, nama belakang pengarang sama) dari edisi lain.
+  const used = new Set<Found>();
+  for (const book of perpusnas) {
+    const sameIsbn = rest.filter((o) => !used.has(o) && o.isbns.some((i) => normalizeIsbn(i) === book.ref));
+    const twins = sameIsbn.length ? sameIsbn : rest.filter((o) => !used.has(o) && sameWork(o, book)).slice(0, 1);
+    if (!twins.length) continue;
+    twins.forEach((t) => used.add(t));
+    const withCover = twins.find((t) => t.cover);
+    book.cover = withCover?.cover ?? null;
+    book.thumb = withCover?.thumb ?? null;
+    book.workKey = twins.find((t) => t.workKey)?.workKey ?? null;
+    book.synopsis ||= twins.find((t) => t.synopsis)?.synopsis ?? "";
+    // Jumlah halaman berbeda antaredisi, jadi hanya diambil dari ISBN yang sama.
+    if (sameIsbn.length) book.pages ??= twins.find((t) => t.pages)?.pages ?? null;
+  }
+  await Promise.all(
+    perpusnas
+      .filter((b) => !b.cover)
+      .slice(0, COVER_LOOKUPS)
+      .map(async (b) => Object.assign(b, await openLibraryCoverByIsbn(b.ref).catch(() => null))),
+  );
+
+  // Data Perpusnas (buku terbitan Indonesia) didahulukan, lalu sumber lain. Dalam tiap kelompok, yang punya sampul
+  // didahulukan karena sampul adalah alasan utama mencari di sini. Perpusnas dibatasi supaya sumber lain tetap tampil.
+  const coverFirst = <T extends SourceBook>(list: T[]) => list.sort((a, b) => Number(!a.cover) - Number(!b.cover));
+  const results: SourceBook[] = [
+    ...coverFirst(perpusnas).slice(0, 10),
+    ...coverFirst(rest.filter((o) => !used.has(o))),
+  ].map((found) => {
+    const { isbns, ...book } = found;
+    void isbns; // hanya untuk pencocokan di server
+    return book;
+  });
+  return { results: results.slice(0, 18), failed };
 }
 
 /** Sinopsis Open Library ada di data karya, bukan di hasil pencarian. */

@@ -11,6 +11,7 @@ import { cn } from "@/lib/cn";
 import { DAY, formatDay, formatLong, formatShort } from "@/lib/dates";
 import { HourPicker, hoursForDate } from "@/components/HourPicker";
 import { formatHour, LIBRARY } from "@/lib/library";
+import { useToast } from "@/components/Toast";
 
 const DURATIONS = [7, 14, 21] as const;
 
@@ -44,16 +45,24 @@ export function BorrowPanel({
     if (!open.includes(hour)) setHour(open[0]);
   };
   const [days, setDays] = useState<(typeof DURATIONS)[number]>(14);
-  const [error, setError] = useState("");
+  const notify = useToast();
   const [pending, startTransition] = useTransition();
   const pickup = times[pick];
   const due = pickup + days * DAY;
 
   const submit = () => {
-    setError("");
     startTransition(async () => {
       const result = await borrowBook({ slug: book.slug, pickupOn: dates[pick], pickupHour: hour, days });
-      if (!result.ok) setError(result.error);
+      notify(
+        result.ok
+          ? {
+              kind: "ok",
+              title: "Peminjaman tercatat",
+              text: `Ambil “${book.title}” ${formatDay(pickup)}, pukul ${formatHour(hour)}.`,
+              action: { href: "/jadwal", label: "Lihat jadwal" },
+            }
+          : { kind: "error", text: result.error },
+      );
     });
   };
 
@@ -153,11 +162,6 @@ export function BorrowPanel({
               </span>
             </div>
           </div>
-          {error && (
-            <p role="alert" className="m-0 rounded-[14px] bg-accent-50 px-4 py-3 text-sm leading-snug text-accent-700">
-              {error}
-            </p>
-          )}
           <button
             type="button"
             className={cn(ui.btn, ui.primary, "disabled:cursor-wait disabled:opacity-80")}

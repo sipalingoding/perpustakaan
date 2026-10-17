@@ -1,15 +1,16 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { advanceDonation } from "@/app/admin/actions";
-import { Alert, Check, Parcel, Spinner } from "@/components/icons";
+import { MemberPhone } from "@/components/admin/MemberPhone";
+import { Check, Parcel, Spinner } from "@/components/icons";
 import { ui } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { formatShort } from "@/lib/dates";
 import { formatHour } from "@/lib/library";
 import type { AdminDonation, DonationStatus } from "@/lib/server/admin-donations";
+import { useToast } from "@/components/Toast";
 
 type Filter = "diajukan" | "dikirim" | "diterima" | "semua";
 
@@ -55,9 +56,7 @@ export function AdminDonations({ donations }: { donations: AdminDonation[] }) {
   const [busyId, setBusyId] = useState<string | null>(null);
   // Klik kedua sebelum tombol sempat nonaktif (klik ganda) diabaikan, supaya tidak menimpa pesan klik pertama.
   const inFlight = useRef(new Set<string>());
-  const [notice, setNotice] = useState<{ kind: "ok" | "error"; text: string; book?: { id: string; label: string } } | null>(
-    null,
-  );
+  const setNotice = useToast();
 
   // Baris yang baru diproses tetap terlihat di saringan ini (dengan status dan tombol berikutnya) sampai saringan diganti,
   // supaya pustakawan tidak kehilangan jejak sumbangan yang baru disetujui.
@@ -94,7 +93,7 @@ export function AdminDonations({ donations }: { donations: AdminDonation[] }) {
           text: b.created
             ? `${d.code} diterima. “${b.title}” masuk koleksi sebagai buku baru di rak sementara SB (${b.copies} eksemplar).`
             : `${d.code} diterima. ${b.copies} eksemplar ditambahkan ke “${b.title}” yang sudah ada di koleksi.`,
-          book: { id: b.bookId, label: b.created ? "Lengkapi data buku" : "Lihat buku" },
+          action: { href: `/admin/buku/${b.bookId}`, label: b.created ? "Lengkapi data buku" : "Lihat buku" },
         });
       }
       router.refresh();
@@ -123,29 +122,6 @@ export function AdminDonations({ donations }: { donations: AdminDonation[] }) {
         ))}
       </div>
 
-      <div role="status" aria-live="polite" className="empty:hidden">
-        {notice && (
-          <p
-            className={cn(
-              "m-0 mt-5 flex max-w-[72ch] animate-pop items-start gap-2.5 rounded-[14px] px-4 py-3 text-sm leading-snug font-semibold",
-              notice.kind === "ok" ? "bg-primary-100 text-primary-700" : "bg-accent-100 text-accent-700",
-            )}
-          >
-            {notice.kind === "ok" ? <Check size={20} className="mt-px shrink-0" /> : <Alert size={20} className="mt-px shrink-0" />}
-            <span>
-              {notice.text}
-              {notice.book && (
-                <>
-                  {" "}
-                  <Link href={`/admin/buku/${notice.book.id}`} className="font-bold underline">
-                    {notice.book.label}
-                  </Link>
-                </>
-              )}
-            </span>
-          </p>
-        )}
-      </div>
 
       <div className="relative mt-5 overflow-x-auto rounded-[22px] border border-line bg-paper">
         <table className="w-full min-w-[860px] border-collapse text-left text-sm">
@@ -186,6 +162,7 @@ export function AdminDonations({ donations }: { donations: AdminDonation[] }) {
                   <td className="px-3 py-3.5">
                     <span className="block font-semibold text-ink-2">{d.donorName}</span>
                     <span className="block text-[13px] break-all text-ink-3">{d.donorEmail}</span>
+                    <MemberPhone phone={d.donorPhone} name={d.donorName} />
                     <span className="mt-1 block text-xs text-muted">Diajukan {day(d.createdOn)}</span>
                   </td>
                   <td className="px-3 py-3.5">

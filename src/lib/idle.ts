@@ -5,7 +5,7 @@
 const KEY = "lembar:aktivitas-terakhir";
 
 /** Bawaan bila IDLE_TIMEOUT_MINUTES tidak diisi atau tidak valid. */
-export const DEFAULT_IDLE_MINUTES = 10;
+export const DEFAULT_IDLE_MINUTES = 30;
 
 /** Alasan di /masuk?keluar=… setelah sesi diakhiri otomatis. */
 export const IDLE_SIGN_OUT = "tidak-aktif";

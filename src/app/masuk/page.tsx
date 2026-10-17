@@ -6,7 +6,7 @@ export const metadata: Metadata = { title: "Masuk" };
 
 export default function MasukPage() {
   return (
-    <AuthBackdrop>
+    <AuthBackdrop catalogLink={false}>
       <AuthBook />
     </AuthBackdrop>
   );

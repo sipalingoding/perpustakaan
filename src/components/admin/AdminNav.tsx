@@ -2,10 +2,11 @@ import Link from "next/link";
 import { ui } from "@/components/ui";
 import { cn } from "@/lib/cn";
 
-export type AdminTab = "koleksi" | "peminjaman" | "sumbangan" | "agenda";
+export type AdminTab = "koleksi" | "kategori" | "peminjaman" | "sumbangan" | "agenda";
 
 const TABS: Array<{ key: AdminTab; href: string; label: string; badge: string }> = [
   { key: "koleksi", href: "/admin", label: "Koleksi", badge: "" },
+  { key: "kategori", href: "/admin/kategori", label: "Kategori", badge: "" },
   { key: "peminjaman", href: "/admin/peminjaman", label: "Peminjaman", badge: "menunggu diambil atau diterima" },
   { key: "sumbangan", href: "/admin/sumbangan", label: "Sumbangan", badge: "perlu ditindaklanjuti" },
   { key: "agenda", href: "/admin/agenda", label: "Agenda", badge: "" },

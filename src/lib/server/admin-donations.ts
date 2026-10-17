@@ -1,7 +1,7 @@
 import "server-only";
 import { desc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { books, donations, user } from "@/db/schema";
+import { books, donations, profiles, user } from "@/db/schema";
 import { LIBRARY_TZ } from "@/lib/server/members";
 
 export type DonationStatus = "diajukan" | "dikirim" | "diterima" | "ditolak";
@@ -24,6 +24,8 @@ export type AdminDonation = {
   status: DonationStatus;
   donorName: string;
   donorEmail: string;
+  /** Nomor HP dari profil penyumbang; null bila belum diisi. */
+  donorPhone: string | null;
   /** Tanggal formulir dikirim, "YYYY-MM-DD" menurut kalender perpustakaan. */
   createdOn: string;
   /** Buku di koleksi yang dibuat/ditambah dari sumbangan ini, bila sudah diterima. */
@@ -49,6 +51,7 @@ export async function getAdminDonations(): Promise<AdminDonation[]> {
       status: donations.status,
       donorName: user.name,
       donorEmail: user.email,
+      donorPhone: profiles.phone,
       bookId: books.id,
       bookSlug: books.slug,
       bookTitle: books.title,
@@ -56,6 +59,7 @@ export async function getAdminDonations(): Promise<AdminDonation[]> {
     })
     .from(donations)
     .innerJoin(user, eq(user.id, donations.userId))
+    .leftJoin(profiles, eq(profiles.userId, donations.userId))
     .leftJoin(books, eq(books.id, donations.bookId))
     .orderBy(
       sql`case ${donations.status} when 'diajukan' then 0 when 'dikirim' then 1 when 'diterima' then 2 else 3 end`,

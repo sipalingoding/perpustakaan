@@ -4,9 +4,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import { clearNotifications, markNotificationsRead } from "@/app/notifikasi/actions";
-import { Alert, Bell, CalendarCheck, Coffee, Parcel, Spinner } from "@/components/icons";
+import { Alert, Bell, CalendarCheck, Coffee, Parcel } from "@/components/icons";
 import { cn } from "@/lib/cn";
 import type { NotificationItem } from "@/lib/server/notifications";
+import { useErrorToast, useToast } from "@/components/Toast";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 /**
  * Lonceng di header: angka = notifikasi yang belum dibaca (perubahan status booking, pinjaman, dan sumbangan).
@@ -34,7 +36,8 @@ export function NotificationMenu({
   const [items, setItems] = useState(serverItems);
   const [confirming, setConfirming] = useState(false);
   const [clearing, setClearing] = useState(false);
-  const [clearError, setClearError] = useState("");
+  const setClearError = useErrorToast();
+  const notify = useToast();
 
   // Data baru dari server (mis. setelah pindah halaman) menggantikan hitungan dan daftar lokal.
   const [serverUnread, setServerUnread] = useState(initialUnread);
@@ -60,6 +63,7 @@ export function NotificationMenu({
       setItems([]);
       setUnread(0);
       setConfirming(false);
+      notify({ kind: "ok", text: "Semua notifikasi dibersihkan." });
       router.refresh();
     } catch {
       setClearError("Gagal membersihkan. Periksa koneksi lalu coba lagi.");
@@ -135,45 +139,28 @@ export function NotificationMenu({
         >
           <div className="flex min-h-[52px] items-center justify-between gap-3 border-b border-line-2 py-1.5 pr-2 pl-4">
             <strong className="text-sm text-ink">Notifikasi</strong>
-            {items.length > 0 &&
-              (confirming ? (
-                <span role="group" aria-label="Konfirmasi hapus semua notifikasi" className="flex items-center gap-1">
-                  <span className="text-xs font-semibold text-accent-700">Hapus semua?</span>
-                  <button
-                    type="button"
-                    onClick={clearAll}
-                    disabled={clearing}
-                    aria-busy={clearing}
-                    autoFocus
-                    className="inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-full border-0 bg-accent-700 px-3 text-xs font-semibold text-cream disabled:cursor-wait"
-                  >
-                    {clearing && <Spinner size={14} />}
-                    Ya, hapus
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setConfirming(false)}
-                    disabled={clearing}
-                    className="inline-flex min-h-11 cursor-pointer items-center rounded-full border-0 bg-transparent px-2.5 text-xs font-semibold text-ink-2 hover:bg-hover"
-                  >
-                    Batal
-                  </button>
-                </span>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setConfirming(true)}
-                  className="inline-flex min-h-11 cursor-pointer items-center rounded-full border-0 bg-transparent px-3 text-xs font-semibold text-ink-3 hover:bg-hover hover:text-ink"
-                >
-                  Hapus semua
-                </button>
-              ))}
+            {items.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setConfirming(true)}
+                aria-haspopup="dialog"
+                className="inline-flex min-h-11 cursor-pointer items-center rounded-full border-0 bg-transparent px-3 text-xs font-semibold text-ink-3 hover:bg-hover hover:text-ink"
+              >
+                Hapus semua
+              </button>
+            )}
+            {confirming && (
+              <ConfirmDialog
+                title="Hapus semua notifikasi?"
+                confirmLabel="Ya, hapus semua"
+                busy={clearing}
+                onConfirm={clearAll}
+                onCancel={() => setConfirming(false)}
+              >
+                {items.length} notifikasi dihapus dari daftarmu. Pengingat jatuh tempo tetap muncul selama masih berlaku.
+              </ConfirmDialog>
+            )}
           </div>
-          {clearError && (
-            <p role="alert" className="m-0 border-b border-line-2 px-4 py-2 text-xs font-semibold text-accent-700">
-              {clearError}
-            </p>
-          )}
           <ul className="m-0 flex list-none flex-col overflow-y-auto p-1.5">
             {due > 0 && (
               <li>

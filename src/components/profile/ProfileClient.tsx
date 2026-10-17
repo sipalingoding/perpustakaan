@@ -11,14 +11,15 @@ import { ShelfPlant } from "@/components/illustrations/ShelfPlant";
 import { MemberCard } from "@/components/profile/MemberCard";
 import { ReadingTracker } from "@/components/profile/ReadingTracker";
 import { ui } from "@/components/ui";
-import { CATEGORIES, type Category } from "@/lib/books";
+import type { Category } from "@/lib/books";
 import { cn } from "@/lib/cn";
+import { formatPhone, normalizePhone, PHONE_HINT } from "@/lib/phone";
 import { formatDay, formatShort } from "@/lib/dates";
 import { squarePhoto } from "@/lib/image";
 import { AVATAR_PRESETS, PERSON, type Gender } from "@/lib/people";
 import type { ProfileData, ShelfEntry } from "@/lib/server/profile-page";
+import { useErrorToast, useToast } from "@/components/Toast";
 
-type Notice = { kind: "ok" } | { kind: "error"; text: string } | null;
 
 const KIND: Record<ShelfEntry["status"], { status: string; className: string; cta: string }> = {
   returned: { status: "Sudah dikembalikan", className: "bg-primary-100 text-primary-700", cta: "Lihat di katalog" },
@@ -45,15 +46,20 @@ function shelfNote(s: ShelfEntry, year: number) {
   return `Terbooking, ambil di meja sirkulasi pada ${formatDay(start)}.`;
 }
 
-export function ProfileClient({ data }: { data: ProfileData }) {
+export function ProfileClient({ data, categories }: { data: ProfileData; categories: Category[] }) {
   const [, startTransition] = useTransition();
-  const [notice, setNotice] = useState<Notice>(null);
+  const notify = useToast();
   const [saving, setSaving] = useState(false);
 
-  const [form, setForm] = useState({ nama: data.name, panggil: data.nickname, telp: data.phone, bio: data.bio });
+  const [form, setForm] = useState({
+    nama: data.name,
+    panggil: data.nickname,
+    telp: data.phone ? formatPhone(data.phone) : "",
+    bio: data.bio,
+  });
   const [gender, setGenderState] = useState<Gender>(data.gender);
-  const [favs, setFavs] = useState<Record<Category, boolean>>(
-    () => Object.fromEntries(CATEGORIES.map((c) => [c, data.favs.includes(c)])) as Record<Category, boolean>,
+  const [favs, setFavs] = useState<Record<Category, boolean>>(() =>
+    Object.fromEntries(categories.map((c) => [c, data.favs.includes(c)])),
   );
   const [notifs, setNotifs] = useState(data.notifs);
 
@@ -72,7 +78,7 @@ export function ProfileClient({ data }: { data: ProfileData }) {
   const [usePhoto, setUsePhoto] = useState(data.usePhoto);
   const [uploading, setUploading] = useState(false);
   const [removing, setRemoving] = useState(false);
-  const [photoNote, setPhotoNote] = useState<string | null>(null);
+  const setPhotoNote = useErrorToast();
   const fileInput = useRef<HTMLInputElement>(null);
   const preset = AVATAR_PRESETS[gender].find((p) => p.id === presetId);
   const baseLook = preset?.look ?? (gender === data.gender ? data.look : PERSON[gender].look);
@@ -81,23 +87,36 @@ export function ProfileClient({ data }: { data: ProfileData }) {
 
   const setField = (key: keyof typeof form) => (e: { target: { value: string } }) => {
     setForm((f) => ({ ...f, [key]: e.target.value }));
-    setNotice(null);
+    if (key === "telp") setPhoneError("");
   };
+  const [phoneError, setPhoneError] = useState("");
+  const phoneProblem = (value: string) => (!value.trim() ? "Nomor HP wajib diisi." : normalizePhone(value) ? "" : PHONE_HINT);
 
   /** Simpan perubahan ke server; kalau gagal, kembalikan tampilan ke nilai sebelumnya. */
   const persist = (save: () => Promise<{ ok: true } | { ok: false; error: string }>, revert?: () => void) =>
     startTransition(async () => {
       const result = await save();
-      if (result.ok) return setNotice({ kind: "ok" });
+      if (result.ok) return notify({ kind: "ok", text: "Perubahan tersimpan." });
       revert?.();
-      setNotice({ kind: "error", text: result.error });
+      notify({ kind: "error", text: result.error });
     });
 
   const onSave = () => {
+    const problem = phoneProblem(form.telp);
+    if (problem) {
+      setPhoneError(problem);
+      notify({ kind: "error", text: "Periksa lagi nomor HP-mu." });
+      document.getElementById("p-telp")?.focus();
+      return;
+    }
     setSaving(true);
     persist(async () => {
       try {
-        return await saveAccount({ name: form.nama, nickname: form.panggil, phone: form.telp, bio: form.bio });
+        const result = await saveAccount({ name: form.nama, nickname: form.panggil, phone: form.telp, bio: form.bio });
+        if (!result.ok && "fields" in result && result.fields.phone) setPhoneError(result.fields.phone);
+        // Tampilkan nomor dalam bentuk baku yang tersimpan, mis. "+62 812…" jadi "0812-3456-7890".
+        if (result.ok) setForm((f) => ({ ...f, telp: formatPhone(f.telp) }));
+        return result;
       } finally {
         setSaving(false);
       }
@@ -145,6 +164,7 @@ export function ProfileClient({ data }: { data: ProfileData }) {
       if (result.ok) {
         setPhoto(result.photo);
         setUsePhoto(true);
+        notify({ kind: "ok", text: "Foto profil diperbarui." });
       } else {
         setPhotoNote(result.error);
       }
@@ -181,7 +201,7 @@ export function ProfileClient({ data }: { data: ProfileData }) {
     setFavs(nextFavs);
     setNotifs(nextNotifs);
     persist(
-      () => savePreferences({ favs: CATEGORIES.filter((c) => nextFavs[c]), notifs: nextNotifs }),
+      () => savePreferences({ favs: categories.filter((c) => nextFavs[c]), notifs: nextNotifs }),
       () => {
         setFavs(before.favs);
         setNotifs(before.notifs);
@@ -378,9 +398,6 @@ export function ProfileClient({ data }: { data: ProfileData }) {
                   />
                 </div>
                 <p className="m-0 text-[13px] text-ink-3">JPG, PNG, atau WebP. Fotomu dipotong jadi persegi dan hanya terlihat oleh anggota yang masuk.</p>
-                <p role="status" aria-live="polite" className="m-0 min-h-0 text-sm font-semibold text-accent-700 empty:hidden">
-                  {photoNote}
-                </p>
               </div>
             </div>
             <div role="group" aria-label="Pilih karakter" className="mt-4 flex flex-wrap items-center gap-2.5">
@@ -415,13 +432,17 @@ export function ProfileClient({ data }: { data: ProfileData }) {
             </div>
             <TextField
               id="p-telp"
-              label="Nomor telepon"
+              label="Nomor HP"
               type="tel"
               autoComplete="tel"
               inputMode="tel"
-              placeholder="Opsional"
+              placeholder="0812-3456-7890"
+              required
               value={form.telp}
               onChange={setField("telp")}
+              onBlur={() => form.telp.trim() && setPhoneError(phoneProblem(form.telp))}
+              error={phoneError}
+              hint={data.phone ? "Dipakai pustakawan untuk menghubungimu soal pinjaman dan sumbangan." : "Belum diisi. Pustakawan memakainya untuk menghubungimu soal pinjaman dan sumbangan."}
             />
           </div>
           <div className="flex flex-col gap-2">
@@ -442,15 +463,6 @@ export function ProfileClient({ data }: { data: ProfileData }) {
               Simpan perubahan
               {saving && <Spinner />}
             </button>
-            <span role="status" aria-live="polite">
-              {notice?.kind === "ok" && (
-                <span className="inline-flex animate-pop items-center gap-2 text-sm font-semibold text-primary-600">
-                  <Check />
-                  Perubahan tersimpan
-                </span>
-              )}
-              {notice?.kind === "error" && <span className="text-sm font-semibold text-accent-700">{notice.text}</span>}
-            </span>
           </div>
         </section>
 
@@ -459,7 +471,7 @@ export function ProfileClient({ data }: { data: ProfileData }) {
           <div className="flex flex-col gap-2.5">
             <span className={ui.label}>Kategori favorit</span>
             <div className="flex flex-wrap gap-2">
-              {CATEGORIES.map((c) => (
+              {categories.map((c) => (
                 <button
                   key={c}
                   type="button"
@@ -532,14 +544,38 @@ function LookTile({
 function TextField({
   id,
   label,
+  error,
+  hint,
   ...input
-}: { id: string; label: string } & ComponentProps<"input">) {
+}: { id: string; label: string; error?: string; hint?: string } & ComponentProps<"input">) {
+  const note = error || hint;
   return (
     <div className="flex flex-col gap-2">
       <label className={ui.label} htmlFor={id}>
         {label}
+        {input.required && (
+          <span className="text-accent-700" aria-hidden="true">
+            {" "}
+            *
+          </span>
+        )}
       </label>
-      <input id={id} type="text" className={ui.field} {...input} />
+      <input
+        id={id}
+        type="text"
+        className={ui.field}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={note ? `${id}-note` : undefined}
+        {...input}
+      />
+      {note && (
+        <p
+          id={`${id}-note`}
+          className={cn("m-0 text-[13px]", error ? "font-semibold text-accent-700" : "text-ink-3")}
+        >
+          {note}
+        </p>
+      )}
     </div>
   );
 }

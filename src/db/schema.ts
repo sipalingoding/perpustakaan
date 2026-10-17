@@ -41,7 +41,21 @@ export const user = pgTable("user", {
 /* Katalog                                                              */
 /* ------------------------------------------------------------------ */
 
-export const category = pgEnum("category", ["Fiksi", "Sains", "Sejarah", "Puisi", "Anak", "Lainnya"]);
+/** Kategori buku, dikelola pustakawan di /admin/kategori. Namanya dipakai langsung sebagai kunci di buku dan sumbangan. */
+export const categories = pgTable(
+  "categories",
+  {
+    name: text("name").primaryKey(),
+    /** Warna sampul ilustrasi bawaan untuk buku kategori ini (buku sumbangan tanpa sampul, pratinjau sumbangan). */
+    coverBg: text("cover_bg").notNull(),
+    coverInk: text("cover_ink").notNull(),
+    /** Urutan tampil di filter katalog dan pilihan kategori: makin kecil makin awal. */
+    position: integer("position").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [check("categories_name_length", sql`char_length(${t.name}) between 1 and 30`)],
+);
+
 export const motif = pgEnum("motif", ["rain", "moon", "waves", "cup", "ripple", "lantern", "wind", "leaf"]);
 
 export const books = pgTable(
@@ -51,7 +65,9 @@ export const books = pgTable(
     slug: text("slug").notNull().unique(),
     title: text("title").notNull(),
     author: text("author").notNull(),
-    category: category("category").notNull(),
+    category: text("category")
+      .notNull()
+      .references(() => categories.name, { onUpdate: "cascade", onDelete: "restrict" }),
     form: text("form").notNull(),
     coverBg: text("cover_bg").notNull(),
     coverInk: text("cover_ink").notNull(),
@@ -125,7 +141,8 @@ export const profiles = pgTable(
     phone: text("phone"),
     /** Target jumlah buku yang dibaca tahun ini. */
     readingGoal: integer("reading_goal").notNull().default(12),
-    favCategories: category("fav_categories").array().notNull().default(sql`'{}'`),
+    /** Nama kategori; diperbarui saat pustakawan mengganti nama atau menghapus kategori. */
+    favCategories: text("fav_categories").array().notNull().default(sql`'{}'`),
     notifications: jsonb("notifications")
       .$type<Notifications>()
       .notNull()
@@ -206,7 +223,9 @@ export const donations = pgTable(
       .references(() => user.id, { onDelete: "cascade", onUpdate: "cascade" }),
     title: text("title").notNull(),
     author: text("author").notNull(),
-    category: category("category").notNull(),
+    category: text("category")
+      .notNull()
+      .references(() => categories.name, { onUpdate: "cascade", onDelete: "restrict" }),
     condition: bookCondition("condition").notNull(),
     qty: integer("qty").notNull().default(1),
     note: text("note").notNull().default(""),

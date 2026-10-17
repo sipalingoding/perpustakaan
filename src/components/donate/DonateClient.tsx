@@ -5,7 +5,7 @@ import { useState, useTransition, type ReactNode } from "react";
 import { createDonation, searchDonationBooks } from "@/app/sumbang/actions";
 import { DateChip } from "@/components/DateChip";
 import { HourPicker, hoursForDate } from "@/components/HourPicker";
-import { Alert, ArrowLeft, ArrowRight, Check, Clipboard, Heart, OpenBook, Parcel, Shelf, Spinner } from "@/components/icons";
+import { ArrowLeft, ArrowRight, Check, Clipboard, Heart, OpenBook, Parcel, Shelf, Spinner } from "@/components/icons";
 import { DonationScene } from "@/components/illustrations/DonationScene";
 import { ShelfSuccess } from "@/components/illustrations/ShelfSuccess";
 import { SourceSearch } from "@/components/SourceSearch";
@@ -13,18 +13,11 @@ import { ui } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { formatHour, LIBRARY, VISIT_HOURS } from "@/lib/library";
 import { BULAN, formatLong } from "@/lib/dates";
+import { FALLBACK_COVER, type Category, type CategoryInfo } from "@/lib/books";
 import type { SourceBook } from "@/lib/server/book-sources";
 import type { DonationSchedule } from "@/lib/server/donations";
+import { useErrorToast, useToast } from "@/components/Toast";
 
-const COVERS = {
-  Fiksi: ["#4F6F66", "#F3F1E7"],
-  Sains: ["#5C7395", "#F6F4EC"],
-  Sejarah: ["#B9C7B0", "#23332D"],
-  Puisi: ["#74678F", "#FBF7EF"],
-  Anak: ["#E3BE9C", "#3A2E26"],
-  Lainnya: ["#C9D3D9", "#22323A"],
-} as const;
-type DonationCategory = keyof typeof COVERS;
 
 const CONDITIONS = [
   { key: "baru", title: "Baru", desc: "Masih bersegel atau belum pernah dibaca." },
@@ -51,7 +44,7 @@ const NOTE_MAX = 120;
 type Form = {
   title: string;
   author: string;
-  category: DonationCategory;
+  category: Category;
   condition: (typeof CONDITIONS)[number]["key"];
   qty: number;
   note: string;
@@ -65,7 +58,7 @@ type Form = {
 const BLANK: Form = {
   title: "",
   author: "",
-  category: "Fiksi",
+  category: "",
   condition: "sangat",
   qty: 1,
   note: "",
@@ -80,9 +73,12 @@ const BLANK: Form = {
 export function DonateClient({
   donor,
   schedule,
+  categories,
 }: {
   donor: string;
   schedule: DonationSchedule;
+  /** Kategori dari /admin/kategori beserta warna sampul pratinjaunya. */
+  categories: CategoryInfo[];
 }) {
   const { dates, todayFirstHour } = schedule;
   /** Jam yang bisa dipilih untuk tanggal ke-i: hari ini hanya jam yang belum lewat. */
@@ -94,9 +90,11 @@ export function DonateClient({
   const [step, setStep] = useState(1);
   const [maxStep, setMaxStep] = useState(1);
   const [done, setDone] = useState(false);
-  const [error, setError] = useState("");
+  const setError = useErrorToast();
+  const notify = useToast();
   const [peek, setPeek] = useState(false);
-  const [form, setForm] = useState<Form>(() => ({ ...BLANK, hour: hoursFor(0)[0] }));
+  const blank = (): Form => ({ ...BLANK, category: categories[0]?.name ?? "", hour: hoursFor(0)[0] });
+  const [form, setForm] = useState<Form>(blank);
   // Sampul dari hasil pencarian, hanya untuk pratinjau. Hilang bila judul diubah manual (bisa jadi buku lain).
   const [pickedCover, setPickedCover] = useState<string | null>(null);
   // Data lengkap dari pencarian (ISBN, tahun, sampul besar, …), ikut disimpan supaya buku masuk koleksi dengan rapi.
@@ -118,7 +116,7 @@ export function DonateClient({
     setDone(false);
     setError("");
     setPeek(false);
-    setForm({ ...BLANK, hour: hoursFor(0)[0], ...p });
+    setForm({ ...blank(), ...p });
     setPickedCover(null);
     setSource(null);
   };
@@ -160,17 +158,18 @@ export function DonateClient({
           pages: source.pages,
           language: source.language,
           coverUrl: source.cover,
-          sourceRef: source.source === "openlibrary" ? source.ref : null,
+          sourceRef: source.workKey,
         },
         showName: form.showName,
       });
       if (!result.ok) return setError(result.error);
       setCode(result.code);
+      notify({ kind: "ok", text: `Sumbangan ${result.code} terkirim. Terima kasih!` });
       setDone(true);
       setPeek(true);
     });
 
-  const [coverBg, coverInk] = COVERS[form.category];
+  const { bg: coverBg, ink: coverInk } = categories.find((c) => c.name === form.category)?.cover ?? FALLBACK_COVER;
   const dateT = DATES[form.date];
   const condition = CONDITIONS.find((c) => c.key === form.condition)!;
   const method = METHODS.find((m) => m.key === form.method)!;
@@ -284,7 +283,7 @@ export function DonateClient({
               <div className="flex flex-col gap-2.5">
                 <span className={ui.label}>Kategori</span>
                 <div className="flex flex-wrap gap-2">
-                  {(Object.keys(COVERS) as DonationCategory[]).map((c) => (
+                  {categories.map(({ name: c, cover }) => (
                     <button
                       key={c}
                       type="button"
@@ -295,7 +294,7 @@ export function DonateClient({
                       <span
                         aria-hidden="true"
                         className="size-3 rounded-[3px] shadow-[0_0_0_1.5px_var(--color-paper)]"
-                        style={{ backgroundColor: COVERS[c][0] }}
+                        style={{ backgroundColor: cover.bg }}
                       />
                       {c}
                     </button>
@@ -358,7 +357,6 @@ export function DonateClient({
                   onChange={(e) => patch({ note: e.target.value })}
                 />
               </Field>
-              <ErrorNote message={error} />
               <div className="flex justify-end">
                 <button type="button" className={cn(ui.btn, ui.primary)} onClick={next1}>
                   Lanjut ke pengiriman
@@ -419,7 +417,6 @@ export function DonateClient({
                 value={form.hour}
                 onChange={(h) => patch({ hour: h })}
               />
-              <ErrorNote message={error} />
               <div className="flex flex-wrap justify-between gap-2.5">
                 <button type="button" className={cn(ui.btn, ui.ghost)} onClick={() => goStep(1)}>
                   <ArrowLeft />
@@ -622,16 +619,6 @@ function OptionCard({
         <span className="mt-[3px] block text-[13px] leading-normal text-ink-3">{desc}</span>
       </span>
     </button>
-  );
-}
-
-function ErrorNote({ message }: { message: string }) {
-  if (!message) return null;
-  return (
-    <p role="alert" className="m-0 flex animate-pop items-center gap-2 rounded-xl bg-[#F6E3DA] px-3.5 py-2.5 text-sm font-semibold text-[#7A3B26]">
-      <Alert />
-      {message}
-    </p>
   );
 }
 
