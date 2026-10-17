@@ -1,6 +1,7 @@
 "use server";
 
 import { and, eq, sql } from "drizzle-orm";
+import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
 import { agendaEvents, agendaRegistrations } from "@/db/schema";
@@ -26,6 +27,8 @@ export async function joinEvent(eventId: string): Promise<JoinResult> {
   const viewer = await getViewer();
   if (!viewer) return SESSION_ENDED;
   if (!z.uuid().safeParse(eventId).success) return GONE;
+  // Agenda yang diikuti tampil di kalender Jadwal saya.
+  revalidatePath("/jadwal");
 
   return db.transaction(async (tx): Promise<JoinResult> => {
     const [event] = await tx
@@ -83,6 +86,7 @@ export async function leaveEvent(eventId: string): Promise<JoinResult> {
   const viewer = await getViewer();
   if (!viewer) return SESSION_ENDED;
   if (!z.uuid().safeParse(eventId).success) return GONE;
+  revalidatePath("/jadwal");
 
   const [event] = await db.select({ started: startedSql }).from(agendaEvents).where(eq(agendaEvents.id, eventId));
   if (!event) return GONE;

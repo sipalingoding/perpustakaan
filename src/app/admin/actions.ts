@@ -4,12 +4,12 @@ import { and, desc, eq, inArray, isNotNull, notExists, sql } from "drizzle-orm";
 import { revalidatePath, updateTag } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
-import { bookCopies, books, categories, donations, loans } from "@/db/schema";
+import { bookCopies, books, categories, donations, libraryStatus, loans } from "@/db/schema";
 import { formatDay } from "@/lib/dates";
 import { fineFor, overdueDays, rupiah } from "@/lib/fine";
 import { formatHour } from "@/lib/library";
 import { LIBRARY_TZ } from "@/lib/server/members";
-import { notify } from "@/lib/server/notifications";
+import { notify, notifyNewBook } from "@/lib/server/notifications";
 import { titleOnly } from "@/lib/books";
 import {
   downloadCover,
@@ -236,6 +236,7 @@ export async function saveBook(form: FormData): Promise<
           })
           .returning({ id: books.id });
         if (!row) throw new UserError("Buku gagal disimpan. Coba lagi.");
+        await notifyNewBook({ title: v.title, author: v.author, category: v.category, slug }, tx);
       }
 
       await syncCopies(tx, id, v.shelf, v.copies);
@@ -520,4 +521,31 @@ export async function approveReturn(id: string): Promise<{ ok: true; lateDays: n
   revalidatePath("/profil");
   revalidatePath("/", "layout");
   return { ok: true, ...row };
+}
+
+/* ---------------------------------------------------------------- */
+/* Status buka/tutup                                                 */
+/* ---------------------------------------------------------------- */
+
+const statusInput = z.object({
+  closed: z.boolean(),
+  note: z.string().trim().max(120, "Keterangan paling panjang 120 huruf."),
+});
+
+/** Tutup perpustakaan secara manual (status "Tutup" di katalog walau masih jam layanan), atau buka lagi. */
+export async function setLibraryClosed(
+  closed: boolean,
+  note = "",
+): Promise<{ ok: true } | Fail> {
+  if (!(await isLibrarian())) return NOT_ALLOWED;
+  const parsed = statusInput.safeParse({ closed, note });
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Isiannya belum benar." };
+  const values = { closed: parsed.data.closed, note: parsed.data.closed ? parsed.data.note : "", updatedAt: new Date() };
+  await db
+    .insert(libraryStatus)
+    .values({ id: 1, ...values })
+    .onConflictDoUpdate({ target: libraryStatus.id, set: values });
+  revalidatePath("/");
+  revalidatePath("/admin", "layout");
+  return { ok: true };
 }

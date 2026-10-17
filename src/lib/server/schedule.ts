@@ -1,7 +1,8 @@
 import "server-only";
 import { and, asc, eq, inArray, or, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { bookCopies, bookReviews, books, loans } from "@/db/schema";
+import { agendaEvents, agendaRegistrations, bookCopies, bookReviews, books, loans } from "@/db/schema";
+import { AGENDA } from "@/lib/agenda";
 import { expireMissedPickups } from "@/lib/server/loans";
 import { fileUrl } from "@/lib/server/storage";
 import { getProfile, libraryToday } from "@/lib/server/members";
@@ -27,13 +28,31 @@ export type ScheduleLoan = {
   returnRequested: boolean;
 };
 
+/** Agenda yang diikuti anggota, ditandai di kalender. */
+export type ScheduleEvent = {
+  id: string;
+  name: string;
+  /** Tanggal acara, ms UTC. */
+  date: number;
+  /** "13.00" */
+  start: string;
+  end: string;
+  place: string;
+  /** Warna identitas agenda. */
+  color: string;
+  ink: string;
+};
+
 export type ScheduleData = {
   today: number;
   /** Tiga bulan yang bisa dibuka: sebelumnya, sekarang, berikutnya. */
   months: Array<[number, number]>;
   loans: ScheduleLoan[];
+  events: ScheduleEvent[];
   remind: boolean;
 };
+
+const hhmm = (t: string) => t.slice(0, 5).replace(":", ".");
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
@@ -49,7 +68,7 @@ export async function getSchedule(userId: string): Promise<ScheduleData> {
   const windowStart = `${months[0][0]}-${pad(months[0][1])}-01`;
   const windowEnd = new Date(Date.UTC(months[2][0], months[2][1], 0)).toISOString().slice(0, 10);
 
-  const [rows, profile] = await Promise.all([
+  const [rows, profile, joined] = await Promise.all([
     db
       .select({
         id: loans.id,
@@ -86,6 +105,24 @@ export async function getSchedule(userId: string): Promise<ScheduleData> {
       )
       .orderBy(asc(loans.startOn)),
     getProfile(userId),
+    db
+      .select({
+        id: agendaEvents.id,
+        kind: agendaEvents.kind,
+        date: agendaEvents.date,
+        startTime: agendaEvents.startTime,
+        endTime: agendaEvents.endTime,
+        place: agendaEvents.place,
+      })
+      .from(agendaRegistrations)
+      .innerJoin(agendaEvents, eq(agendaEvents.id, agendaRegistrations.eventId))
+      .where(
+        and(
+          eq(agendaRegistrations.userId, userId),
+          sql`${agendaEvents.date} between ${windowStart}::date and ${windowEnd}::date`,
+        ),
+      )
+      .orderBy(asc(agendaEvents.date), asc(agendaEvents.startTime)),
   ]);
 
   return {
@@ -105,6 +142,16 @@ export async function getSchedule(userId: string): Promise<ScheduleData> {
       pickupHour: r.pickupHour,
       returnRequested: r.returnRequested,
       myReview: r.reviewRating !== null ? { rating: r.reviewRating, body: r.reviewBody ?? "" } : null,
+    })),
+    events: joined.map((e) => ({
+      id: e.id,
+      name: AGENDA[e.kind].name,
+      date: Date.parse(e.date),
+      start: hhmm(e.startTime),
+      end: hhmm(e.endTime),
+      place: e.place,
+      color: AGENDA[e.kind].tone.bg,
+      ink: AGENDA[e.kind].tone.ink,
     })),
     remind: profile?.notifications.due ?? true,
   };

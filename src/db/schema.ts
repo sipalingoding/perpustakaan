@@ -118,7 +118,7 @@ export const gender = pgEnum("gender", ["perempuan", "laki-laki"]);
 /** Pustakawan bisa membuka /admin untuk mengelola koleksi. */
 export const role = pgEnum("role", ["anggota", "pustakawan"]);
 
-export type Notifications = { due: boolean; fav: boolean; recap: boolean };
+export type Notifications = { due: boolean; fav: boolean };
 
 export const profiles = pgTable(
   "profiles",
@@ -146,7 +146,7 @@ export const profiles = pgTable(
     notifications: jsonb("notifications")
       .$type<Notifications>()
       .notNull()
-      .default({ due: true, fav: true, recap: false }),
+      .default({ due: true, fav: true }),
     /** Buku yang sedang dibaca, ditampilkan di papan baca. */
     readingBookId: uuid("reading_book_id").references(() => books.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -187,6 +187,11 @@ export const loans = pgTable(
     returnRequestedAt: timestamp("return_requested_at", { withTimezone: true }),
     /** Sudah diperpanjang atau belum: satu kali, 7 hari. */
     extensions: integer("extensions").notNull().default(0),
+    /**
+     * Jatuh tempo yang sudah diingatkan lewat email/WhatsApp. Dibandingkan dengan due_on, jadi pinjaman yang
+     * diperpanjang mendapat pengingat lagi untuk tanggal barunya.
+     */
+    remindedFor: date("reminded_for", { mode: "string" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
@@ -265,7 +270,7 @@ export const donations = pgTable(
 /* ------------------------------------------------------------------ */
 
 /** Jenis notifikasi; menentukan ikon di daftar notifikasi. */
-export const notificationKind = pgEnum("notification_kind", ["peminjaman", "sumbangan", "agenda"]);
+export const notificationKind = pgEnum("notification_kind", ["peminjaman", "sumbangan", "agenda", "buku"]);
 
 /** Kabar perubahan status untuk anggota (booking, pengambilan, pembatalan, sumbangan). Tampil di lonceng header. */
 export const notifications = pgTable(
@@ -383,5 +388,28 @@ export const bookReviews = pgTable(
     index("book_reviews_book_idx").on(t.bookId, t.updatedAt),
     check("book_reviews_rating_range", sql`${t.rating} between 1 and 5`),
     check("book_reviews_body_length", sql`char_length(${t.body}) <= 1000`),
+  ],
+);
+
+/* ------------------------------------------------------------------ */
+/* Status layanan                                                       */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Satu baris (id = 1): pustakawan menutup perpustakaan secara manual, mis. libur atau keperluan mendadak.
+ * Selama `closed`, status di katalog "Tutup" walau masih jam layanan, sampai pustakawan membukanya lagi.
+ */
+export const libraryStatus = pgTable(
+  "library_status",
+  {
+    id: smallint("id").primaryKey().default(1),
+    closed: boolean("closed").notNull().default(false),
+    /** Keterangan untuk anggota, mis. "Libur Idul Fitri". Boleh kosong. */
+    note: text("note").notNull().default(""),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check("library_status_single_row", sql`${t.id} = 1`),
+    check("library_status_note_length", sql`char_length(${t.note}) <= 120`),
   ],
 );

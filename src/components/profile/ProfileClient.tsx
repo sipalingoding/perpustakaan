@@ -28,9 +28,8 @@ const KIND: Record<ShelfEntry["status"], { status: string; className: string; ct
 };
 
 const NOTIFS = [
-  { key: "due", title: "Pengingat jatuh tempo", desc: "Dua hari sebelum buku perlu dikembalikan." },
-  { key: "fav", title: "Buku baru di kategori favorit", desc: "Kabar saat ada judul baru di rak yang kamu sukai." },
-  { key: "recap", title: "Ringkasan bacaan bulanan", desc: "Catatan singkat buku yang kamu pinjam setiap bulan." },
+  { key: "due", title: "Pengingat jatuh tempo", desc: "Email dan WhatsApp sehari sebelum buku perlu dikembalikan." },
+  { key: "fav", title: "Buku baru di kategori favorit", desc: "Notifikasi di lonceng saat pustakawan menambah judul di kategori favoritmu." },
 ] as const;
 
 const SPINE_HEIGHTS = [240, 262, 230, 218, 236];

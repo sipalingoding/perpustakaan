@@ -96,7 +96,7 @@ export async function saveReadingProgress(
 
 const preferences = z.object({
   favs: z.array(z.string().max(30)).max(100),
-  notifs: z.object({ due: z.boolean(), fav: z.boolean(), recap: z.boolean() }),
+  notifs: z.object({ due: z.boolean(), fav: z.boolean() }),
 });
 
 export async function savePreferences(input: z.input<typeof preferences>): Promise<ActionResult> {

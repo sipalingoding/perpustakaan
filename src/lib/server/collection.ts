@@ -5,7 +5,7 @@ import { bookCopies, books, categories, donations } from "@/db/schema";
 import { FALLBACK_COVER, titleOnly } from "@/lib/books";
 import { downloadCover, openLibraryDescription } from "@/lib/server/book-sources";
 import { processCover } from "@/lib/server/covers";
-import { notify } from "@/lib/server/notifications";
+import { notify, notifyNewBook } from "@/lib/server/notifications";
 import { deleteFile, newFileKey, putFile } from "@/lib/server/storage";
 
 export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -146,6 +146,8 @@ export async function acceptDonation(donationId: string): Promise<AcceptedDonati
       // Ditautkan setelah bukunya ada (relasi ke books).
       await tx.update(donations).set({ bookId }).where(eq(donations.id, d.id));
       await thanks(slug);
+      // Sumbangan yang jadi judul baru juga kabar buku baru bagi penggemar kategorinya.
+      await notifyNewBook({ title: d.title, author: d.author, category: d.category, slug }, tx);
       return { bookId, slug, title: d.title, created: true, copies: d.qty };
     });
   } catch (e) {

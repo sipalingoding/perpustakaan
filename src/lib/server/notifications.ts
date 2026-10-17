@@ -1,13 +1,13 @@
 import "server-only";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { notifications } from "@/db/schema";
+import { notifications, profiles } from "@/db/schema";
 import type { Tx } from "@/lib/server/collection";
 import { LIBRARY_TZ } from "@/lib/server/members";
 
 export type NewNotification = {
   userId: string;
-  kind: "peminjaman" | "sumbangan" | "agenda";
+  kind: "peminjaman" | "sumbangan" | "agenda" | "buku";
   title: string;
   body: string;
   href?: string;
@@ -22,7 +22,7 @@ export async function notify(items: NewNotification | NewNotification[], tx: Tx 
 
 export type NotificationItem = {
   id: string;
-  kind: "peminjaman" | "sumbangan" | "agenda";
+  kind: "peminjaman" | "sumbangan" | "agenda" | "buku";
   title: string;
   body: string;
   href: string | null;
@@ -75,4 +75,34 @@ export async function deleteAll(userId: string) {
     .where(eq(notifications.userId, userId))
     .returning({ id: notifications.id });
   return gone.length;
+}
+
+/**
+ * Kabari anggota yang menyalakan "Buku baru di kategori favorit" dan menandai kategori buku ini sebagai favorit.
+ * Panggil di dalam transaksi penambahan buku, supaya notifikasi hanya tercatat bila bukunya tersimpan.
+ */
+export async function notifyNewBook(
+  book: { title: string; author: string; category: string; slug: string },
+  tx: Tx | typeof db = db,
+) {
+  const readers = await tx
+    .select({ userId: profiles.userId })
+    .from(profiles)
+    .where(
+      and(
+        sql`${book.category} = any(${profiles.favCategories})`,
+        sql`coalesce((${profiles.notifications}->>'fav')::boolean, true)`,
+      ),
+    );
+  await notify(
+    readers.map((r) => ({
+      userId: r.userId,
+      kind: "buku" as const,
+      title: `Buku baru di ${book.category}`,
+      body: `“${book.title}”${book.author.trim() ? ` karya ${book.author.trim()}` : ""} baru masuk rak. Pinjam sebelum keduluan.`,
+      href: `/buku/${book.slug}`,
+    })),
+    tx,
+  );
+  return readers.length;
 }

@@ -7,7 +7,7 @@ import { LIBRARY } from "@/lib/library";
 /** Kerangka halaman anggota: navigasi, isi, dan kaki halaman. */
 export function PageShell({ active, children }: { active?: NavKey; children: ReactNode }) {
   return (
-    <div className="flex min-h-screen flex-col overflow-x-clip">
+    <div className="flex min-h-screen flex-col overflow-x-clip pb-[calc(64px+env(safe-area-inset-bottom,0px))] min-[821px]:pb-0">
       <SiteHeader active={active} />
       <main className="flex-1">{children}</main>
       <footer className="mt-24 border-t border-line">

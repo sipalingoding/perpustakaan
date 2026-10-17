@@ -25,6 +25,10 @@ const SORTS: SortOption<Sort>[] = [
   { value: "tersedia", label: "Tersedia", hint: "Yang bisa langsung dipinjam di atas" },
 ];
 
+/** Pilihan kategori: versi kecil dari ui.chip, supaya deretan filter tidak menyaingi judul buku. */
+const categoryChip =
+  "inline-flex min-h-9 cursor-pointer items-center rounded-full border-[1.5px] border-field bg-transparent px-3.5 text-[13px] font-semibold text-ink-2 transition-colors hover:border-primary-400 hover:bg-tint aria-pressed:border-ink aria-pressed:bg-ink aria-pressed:text-cream aria-pressed:hover:border-ink aria-pressed:hover:bg-ink";
+
 export function KatalogClient({
   books: all,
   myLoans,
@@ -119,22 +123,6 @@ export function KatalogClient({
               <BusyWord word="ramai" />.
             </span>
           </h1>
-          <div className="due-slip relative max-w-[46ch] -rotate-[0.8deg] rounded-[6px_16px_16px_6px] border border-line py-[15px] pr-7 pl-12 shadow-[0_20px_34px_-26px_rgba(29,43,40,.65)]">
-            <span
-              aria-hidden="true"
-              className="absolute top-1/2 left-3 size-3 -translate-y-1/2 rounded-full bg-ground shadow-[inset_0_1px_2px_rgba(29,43,40,.35)]"
-            />
-            <p className="m-0 text-[17px] leading-[30px] text-ink-2">
-              Cari buku yang ingin kamu bawa pulang, lalu baca dengan tenang. Soal kapan harus kembali,{" "}
-              <strong className="font-semibold text-ink">biar jadwalmu yang mengingatkan.</strong>
-            </p>
-            <span
-              aria-hidden="true"
-              className="absolute -right-2 -bottom-4 rotate-[-10deg] rounded-full border-2 border-accent-600/70 bg-paper/60 px-3 py-0.5 text-[11px] font-bold tracking-[0.12em] text-accent-600 uppercase"
-            >
-              Lembar
-            </span>
-          </div>
           <div className="flex max-w-[540px] items-center gap-2.5 rounded-full border-[1.5px] border-line bg-white py-1.5 pr-1.5 pl-5 shadow-[0_18px_40px_-28px_rgba(29,43,40,.5)] transition focus-within:border-primary-600 focus-within:shadow-[0_0_0_4px_rgba(46,90,82,.14)]">
             <Search className="shrink-0 text-ink-3" />
             <label className="sr-only" htmlFor="cari">
@@ -154,6 +142,22 @@ export function KatalogClient({
             <a href="#katalog" className={cn(ui.btn, ui.primary, "min-h-12")}>
               Cari
             </a>
+          </div>
+          <div className="due-slip relative max-w-[46ch] -rotate-[0.8deg] rounded-[6px_16px_16px_6px] border border-line py-[15px] pr-7 pl-12 shadow-[0_20px_34px_-26px_rgba(29,43,40,.65)]">
+            <span
+              aria-hidden="true"
+              className="absolute top-1/2 left-3 size-3 -translate-y-1/2 rounded-full bg-ground shadow-[inset_0_1px_2px_rgba(29,43,40,.35)]"
+            />
+            <p className="m-0 text-[17px] leading-[30px] text-ink-2">
+              Cari buku yang ingin kamu bawa pulang, lalu baca dengan tenang. Soal kapan harus kembali,{" "}
+              <strong className="font-semibold text-ink">biar jadwalmu yang mengingatkan.</strong>
+            </p>
+            <span
+              aria-hidden="true"
+              className="absolute -right-2 -bottom-4 rotate-[-10deg] rounded-full border-2 border-accent-600/70 bg-paper/60 px-3 py-0.5 text-[11px] font-bold tracking-[0.12em] text-accent-600 uppercase"
+            >
+              Lembar
+            </span>
           </div>
         </div>
 
@@ -198,12 +202,12 @@ export function KatalogClient({
           </div>
           <SortMenu label="Urutkan" value={sort} options={SORTS} onChange={(s) => refilter({ sort: s })} />
         </div>
-        <div className="flex flex-wrap gap-2.5">
+        <div className="flex flex-wrap gap-2">
           {["Semua", ...categories].map((c) => (
             <button
               key={c}
               type="button"
-              className={ui.chip}
+              className={categoryChip}
               aria-pressed={c === category}
               onClick={() => refilter({ category: c })}
             >

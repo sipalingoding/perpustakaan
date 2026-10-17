@@ -99,7 +99,7 @@ export function IdleSignOut({ minutes }: { minutes: number }) {
   if (!error && secondsLeft === null) return null;
 
   return (
-    <div className="pointer-events-none fixed inset-x-4 bottom-[calc(16px+env(safe-area-inset-bottom,0px))] z-50 flex justify-center">
+    <div className="pointer-events-none fixed inset-x-4 bottom-[calc(80px+env(safe-area-inset-bottom,0px))] z-50 min-[821px]:bottom-[calc(16px+env(safe-area-inset-bottom,0px))] flex justify-center">
       <div
         role="alertdialog"
         aria-labelledby="idle-title"

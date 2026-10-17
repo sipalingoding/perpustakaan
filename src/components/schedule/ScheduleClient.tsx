@@ -15,7 +15,7 @@ import { cn } from "@/lib/cn";
 import { formatHour } from "@/lib/library";
 import { BULAN, DAY, formatDay, formatLong, formatShort, utc } from "@/lib/dates";
 import { FINE_PER_DAY, fineFor, overdueDays, rupiah } from "@/lib/fine";
-import type { ScheduleData, ScheduleLoan } from "@/lib/server/schedule";
+import type { ScheduleData, ScheduleEvent, ScheduleLoan } from "@/lib/server/schedule";
 
 const NOTE: Record<ScheduleLoan["status"], string> = {
   returned: "dikembalikan",
@@ -43,13 +43,15 @@ type Cell =
       day: number;
       sunday: boolean;
       lanes: Array<{ id: string; on: boolean; late: boolean; start: boolean; end: boolean; loan: ScheduleLoan }>;
+      /** Agenda yang diikuti pada hari ini. */
+      agenda: ScheduleEvent[];
       tag?: keyof typeof TAG_STYLE;
       count: number;
     };
 
 /** Jadwal peminjaman: kalender meja, daftar pinjaman, dan reservasi. Buku yang terlambat dikenai denda per hari. */
 export function ScheduleClient({ data }: { data: ScheduleData }) {
-  const { today, months, loans } = data;
+  const { today, months, loans, events: agenda } = data;
   const [monthIndex, setMonthIndex] = useState(1);
   const [flips, setFlips] = useState(0);
   const [selected, setSelected] = useState(today);
@@ -94,6 +96,7 @@ export function ScheduleClient({ data }: { data: ScheduleData }) {
       day: d,
       sunday: new Date(t).getUTCDay() === 0,
       lanes,
+      agenda: agenda.filter((e) => e.date === t),
       tag,
       count: lanes.filter((l) => l.on).length,
     });
@@ -115,6 +118,10 @@ export function ScheduleClient({ data }: { data: ScheduleData }) {
       else if (l.status === "returned") text = "masa pinjam (sudah selesai)";
       return { loan: l, text, late: selected > l.due };
     });
+
+  const selectedAgenda = agenda.filter((e) => e.date === selected);
+  const monthAgenda = agenda.filter((e) => e.date >= first && e.date <= last);
+  const upcomingAgenda = agenda.filter((e) => e.date >= today);
 
   const active = loans.filter((l) => l.status === "active");
   const reserved = loans.find((l) => l.status === "reserved");
@@ -140,7 +147,7 @@ export function ScheduleClient({ data }: { data: ScheduleData }) {
       }
       notify({
         kind: "ok",
-        text: next ? "Pengingat menyala: kami kabari 2 hari sebelum jatuh tempo." : "Pengingat jatuh tempo dimatikan.",
+        text: next ? "Pengingat menyala: kami kirim email dan WhatsApp sehari sebelum jatuh tempo." : "Pengingat jatuh tempo dimatikan.",
       });
     });
   };
@@ -163,6 +170,11 @@ export function ScheduleClient({ data }: { data: ScheduleData }) {
             <span className={ui.stat}>
               <strong>{reserved ? 1 : 0}</strong> terbooking
             </span>
+            {upcomingAgenda.length > 0 && (
+              <span className={ui.stat}>
+                <strong>{upcomingAgenda.length}</strong> agenda diikuti
+              </span>
+            )}
             <span className={lateLoans.length > 0 ? LATE_STAT : ui.stat}>
               <strong>{lateLoans.length}</strong> terlambat
             </span>
@@ -238,7 +250,7 @@ export function ScheduleClient({ data }: { data: ScheduleData }) {
                       key={cell.key}
                       type="button"
                       aria-pressed={cell.time === selected}
-                      aria-label={`${formatLong(cell.time)}${cell.count ? `, ${cell.count} buku` : ""}${cell.tag ? `, ${cell.tag.toLowerCase()}` : ""}`}
+                      aria-label={`${formatLong(cell.time)}${cell.count ? `, ${cell.count} buku` : ""}${cell.tag ? `, ${cell.tag.toLowerCase()}` : ""}${cell.agenda.map((e) => `, agenda ${e.name} pukul ${e.start}`).join("")}`}
                       onClick={() => setSelected(cell.time)}
                       className="relative flex min-h-[62px] cursor-pointer flex-col gap-1.5 border-0 border-r border-b border-solid border-line-2 bg-transparent py-2 text-left text-ink transition-colors hover:bg-primary-50 aria-pressed:bg-primary-50 aria-pressed:shadow-[inset_0_0_0_2px_var(--color-primary-600)] sm:min-h-[94px]"
                     >
@@ -267,6 +279,16 @@ export function ScheduleClient({ data }: { data: ScheduleData }) {
                           />
                         ))}
                       </span>
+                      {cell.agenda.map((e) => (
+                        <span
+                          key={e.id}
+                          className="mx-1 block truncate rounded-md px-1.5 py-[3px] text-[10px] leading-tight font-bold sm:mx-2 sm:text-[11px]"
+                          style={{ backgroundColor: e.color, color: e.ink }}
+                        >
+                          <span className="max-sm:hidden">{e.start} </span>
+                          {e.name}
+                        </span>
+                      ))}
                       {cell.tag && (
                         <span
                           className={cn(
@@ -282,8 +304,16 @@ export function ScheduleClient({ data }: { data: ScheduleData }) {
                 )}
               </div>
 
-              {inMonth.length > 0 ? (
+              {inMonth.length > 0 || monthAgenda.length > 0 ? (
                 <ul className="m-0 mt-5 flex list-none flex-wrap gap-x-6 gap-y-2.5 p-0 text-[13px] text-ink-2">
+                  {monthAgenda.map((e) => (
+                    <li key={e.id} className="flex items-center gap-2">
+                      <AgendaSwatch event={e} />
+                      <span>
+                        <strong>{e.name}</strong> · {formatShort(e.date)}, {e.start}–{e.end} · agenda
+                      </span>
+                    </li>
+                  ))}
                   {inMonth.map((l) => (
                     <li key={l.id} className="flex items-center gap-2">
                       <Swatch loan={l} />
@@ -295,7 +325,7 @@ export function ScheduleClient({ data }: { data: ScheduleData }) {
                   ))}
                 </ul>
               ) : (
-                <p className="mt-5 mb-0 text-sm text-ink-3">Belum ada jadwal peminjaman di bulan ini.</p>
+                <p className="mt-5 mb-0 text-sm text-ink-3">Belum ada jadwal peminjaman atau agenda di bulan ini.</p>
               )}
             </div>
           </div>
@@ -306,8 +336,17 @@ export function ScheduleClient({ data }: { data: ScheduleData }) {
               {formatLong(selected)}
               {selected === today && " · hari ini"}
             </p>
-            {selectedEvents.length > 0 ? (
+            {selectedEvents.length > 0 || selectedAgenda.length > 0 ? (
               <ul className="m-0 flex list-none flex-col gap-2.5 p-0">
+                {selectedAgenda.map((e) => (
+                  <li key={e.id} className="flex items-center gap-3 text-[15px] text-ink-2">
+                    <AgendaSwatch event={e} />
+                    <span>
+                      <strong className="text-ink">{e.name}</strong>: agenda pukul {e.start}–{e.end} WIB di {e.place}.{" "}
+                      <Link href={`/agenda#jadwal-${e.id}`}>Lihat agenda</Link>
+                    </span>
+                  </li>
+                ))}
                 {selectedEvents.map(({ loan, text, late }) => (
                   <li key={loan.id} className="flex items-center gap-3 text-[15px] text-ink-2">
                     <Swatch loan={loan} late={late} />
@@ -446,7 +485,7 @@ export function ScheduleClient({ data }: { data: ScheduleData }) {
             <label className="flex min-h-11 cursor-pointer items-center justify-between gap-4">
               <span>
                 <strong className="block text-[15px]">Ingatkan aku</strong>
-                <span className="mt-0.5 block text-[13px] text-ink-3">Kirim pengingat 2 hari sebelum jatuh tempo.</span>
+                <span className="mt-0.5 block text-[13px] text-ink-3">Email dan WhatsApp ke kontak terdaftar, sehari sebelum jatuh tempo.</span>
               </span>
               <input type="checkbox" className="switch" checked={remind} onChange={toggleRemind} />
             </label>
@@ -478,6 +517,12 @@ export function ScheduleClient({ data }: { data: ScheduleData }) {
         />
       )}
     </div>
+  );
+}
+
+function AgendaSwatch({ event }: { event: ScheduleEvent }) {
+  return (
+    <span aria-hidden="true" className="inline-block size-3 shrink-0 rounded-[4px]" style={{ backgroundColor: event.color }} />
   );
 }
 

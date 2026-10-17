@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import { clearNotifications, markNotificationsRead } from "@/app/notifikasi/actions";
-import { Alert, Bell, CalendarCheck, Coffee, Parcel } from "@/components/icons";
+import { Alert, Bell, CalendarCheck, Coffee, OpenBook, Parcel } from "@/components/icons";
 import { cn } from "@/lib/cn";
 import type { NotificationItem } from "@/lib/server/notifications";
 import { useErrorToast, useToast } from "@/components/Toast";
@@ -22,7 +22,7 @@ export function NotificationMenu({
 }: {
   items: NotificationItem[];
   unread: number;
-  /** Pinjaman aktif yang jatuh tempo dalam 2 hari atau sudah lewat. */
+  /** Pinjaman aktif yang jatuh tempo besok, hari ini, atau sudah lewat. */
   due: number;
 }) {
   const id = useId();
@@ -168,7 +168,7 @@ export function NotificationMenu({
                   href="/jadwal"
                   icon={<Alert size={20} />}
                   title="Pengingat jatuh tempo"
-                  body={`${due} buku perlu dikembalikan dalam 2 hari atau sudah lewat.`}
+                  body={`${due} buku perlu dikembalikan besok, hari ini, atau sudah lewat.`}
                   highlight
                   onNavigate={() => setOpen(false)}
                 />
@@ -183,6 +183,8 @@ export function NotificationMenu({
                       <Parcel size={20} />
                     ) : n.kind === "agenda" ? (
                       <Coffee size={20} />
+                    ) : n.kind === "buku" ? (
+                      <OpenBook size={20} />
                     ) : (
                       <CalendarCheck size={20} />
                     )

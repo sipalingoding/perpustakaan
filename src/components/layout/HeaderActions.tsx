@@ -7,6 +7,8 @@ import { ArrowRight } from "@/components/icons";
 import { ui } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { idleMinutes } from "@/lib/idle";
+import { AgendaPosterPopup } from "@/components/agenda/AgendaPosterPopup";
+import { getUpcomingEvents } from "@/lib/server/agenda";
 import { countDueReminders, getProfile, resolveLook } from "@/lib/server/members";
 import { countUnread, getNotifications } from "@/lib/server/notifications";
 import { getRole, getViewer } from "@/lib/server/session";
@@ -29,13 +31,16 @@ export async function HeaderActions({ active }: { active?: NavKey }) {
     );
   }
 
-  const [profile, due, role, items, unread] = await Promise.all([
+  const [profile, due, role, items, unread, events] = await Promise.all([
     getProfile(viewer.id),
     countDueReminders(viewer.id),
     getRole(),
     getNotifications(viewer.id),
     countUnread(viewer.id),
+    getUpcomingEvents(viewer.id, 6),
   ]);
+  // Poster agenda terdekat muncul sekali setelah masuk, di halaman mana pun anggota mendarat.
+  const featured = events.find((e) => e.poster && !e.started);
   const look = resolveLook(viewer.id, profile ?? { gender: "perempuan", avatarLook: null, usePhoto: false, photoKey: null });
 
   return (
@@ -43,6 +48,7 @@ export async function HeaderActions({ active }: { active?: NavKey }) {
       <NotificationMenu items={items} unread={unread} due={due} />
       <ProfileMenu name={viewer.name} email={viewer.email} look={look} onProfile={active === "profil"} librarian={role === "pustakawan"} />
       <IdleSignOut minutes={idleMinutes(process.env.IDLE_TIMEOUT_MINUTES)} />
+      {featured && active !== "agenda" && <AgendaPosterPopup event={featured} viewerKey={viewer.id} />}
     </>
   );
 }

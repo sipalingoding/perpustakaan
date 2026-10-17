@@ -6,9 +6,10 @@ import { loans, profiles, user } from "@/db/schema";
 import { PERSON } from "@/lib/people";
 import { fileUrl } from "@/lib/server/storage";
 
-/** Zona waktu perpustakaan; "hari ini" dan "dua hari lagi" dihitung menurut kalender ini. */
+/** Zona waktu perpustakaan; "hari ini" dan "besok" dihitung menurut kalender ini. */
 export const LIBRARY_TZ = "Asia/Jakarta";
-export const REMINDER_DAYS = 2;
+/** Pengingat jatuh tempo dikirim (dan lonceng menyala) sekian hari sebelumnya. */
+export const REMINDER_DAYS = 1;
 
 export async function getProfile(userId: string) {
   const [existing] = await db.select().from(profiles).where(eq(profiles.userId, userId));
@@ -25,7 +26,7 @@ export async function getProfile(userId: string) {
   return created ?? (await db.select().from(profiles).where(eq(profiles.userId, userId)))[0];
 }
 
-/** Jumlah pinjaman aktif yang jatuh tempo dalam 2 hari atau sudah lewat. */
+/** Jumlah pinjaman aktif yang jatuh tempo besok, hari ini, atau sudah lewat. */
 export async function countDueReminders(userId: string) {
   const [row] = await db
     .select({ n: sql<number>`count(*)::int` })

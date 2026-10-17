@@ -2,10 +2,12 @@
 
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { revalidatePath, updateTag } from "next/cache";
+import { after } from "next/server";
 import { z } from "zod";
 import { db } from "@/db";
 import { bookCopies, bookReviews, books, loans, profiles } from "@/db/schema";
 import { fineFor, overdueDays, rupiah } from "@/lib/fine";
+import { sendDueReminders } from "@/lib/server/due-reminders";
 import { LIBRARY_TZ } from "@/lib/server/members";
 import { notify } from "@/lib/server/notifications";
 import { getViewer } from "@/lib/server/session";
@@ -23,6 +25,8 @@ export async function setDueReminder(on: boolean): Promise<ActionResult> {
     .update(profiles)
     .set({ notifications: sql`jsonb_set(${profiles.notifications}, '{due}', to_jsonb(${parsed.data}::boolean))` })
     .where(eq(profiles.userId, viewer.id));
+  // Buku yang jatuh tempo besok langsung diingatkan, tanpa menunggu cron pagi berikutnya.
+  if (parsed.data) after(() => sendDueReminders(viewer.id).catch((e) => console.error("Pengingat gagal dikirim", e)));
   return { ok: true };
 }
 

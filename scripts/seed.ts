@@ -145,7 +145,7 @@ async function main() {
     bio: me.bio,
     readingGoal: 12,
     favCategories: ["Fiksi", "Sains"],
-    notifications: { due: true, fav: true, recap: false },
+    notifications: { due: true, fav: true },
     readingBookId: shelfBookId(me.reading) ?? null,
     createdAt: joined,
   });
