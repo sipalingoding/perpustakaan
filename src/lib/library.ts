@@ -14,9 +14,6 @@ export const LIBRARY = {
 /** Slot antar/jemput per jam: 10.00, 11.00, … sampai satu jam sebelum tutup. */
 export const VISIT_HOURS: number[] = Array.from({ length: LIBRARY.closeHour - LIBRARY.openHour }, (_, i) => LIBRARY.openHour + i);
 
-/** Perpanjangan pinjaman: sekali per pinjaman, sekian hari dari batas kembali (lihat loans.extensions). */
-export const EXTENSION_DAYS = 7;
-
 /** 14 -> "14.00" */
 export const formatHour = (h: number) => `${String(h).padStart(2, "0")}.00`;
 

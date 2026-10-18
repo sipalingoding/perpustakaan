@@ -4,7 +4,7 @@ import { db } from "@/db";
 import { bookCopies, books, loans, profiles, user } from "@/db/schema";
 import { formatLong } from "@/lib/dates";
 import { fineFor, overdueDays, rupiah } from "@/lib/fine";
-import { EXTENSION_DAYS, LIBRARY } from "@/lib/library";
+import { LIBRARY } from "@/lib/library";
 import { normalizePhone } from "@/lib/phone";
 import { LIBRARY_TZ, REMINDER_DAYS } from "@/lib/server/members";
 import { emailConfigured, sendEmail, sendWhatsApp, siteUrl, whatsappConfigured } from "@/lib/server/messaging";
@@ -45,12 +45,8 @@ function compose(name: string, list: DueLoan[]) {
   const lines = list.map((l) => `• “${l.title}”: ${lateDays(l) > 0 ? "" : "kembalikan "}${whenText(l)}`);
   const intro = `Halo ${name}, ini pengingat dari Perpustakaan Lembar.`;
   const hours = `${LIBRARY.days}, ${LIBRARY.hours} WIB`;
-  const extend = list.some((l) => lateDays(l) === 0)
-    ? ` Buku yang belum terlambat bisa diperpanjang sekali (${EXTENSION_DAYS} hari) lewat halaman Jadwal saya.`
-    : "";
   const outro =
-    `Serahkan bukunya di meja sirkulasi pada jam layanan (${hours})${anyLate ? "; denda berhenti dihitung saat bukunya diterima" : ""}.` +
-    `${extend} ${link}`;
+    `Serahkan bukunya di meja sirkulasi pada jam layanan (${hours})${anyLate ? "; denda berhenti dihitung saat bukunya diterima" : ""}. ${link}`;
   const subject =
     list.length === 1
       ? lateDays(list[0]) > 0
@@ -61,7 +57,7 @@ function compose(name: string, list: DueLoan[]) {
   const html = `<div style="font-family:Arial,sans-serif;font-size:15px;line-height:1.6;color:#1d2b28">
 <p>${escapeHtml(intro)}</p>
 <ul>${list.map((l) => `<li><strong>${escapeHtml(l.title)}</strong>: ${escapeHtml(`${lateDays(l) > 0 ? "" : "kembalikan "}${whenText(l)}`)}</li>`).join("")}</ul>
-<p>Serahkan bukunya di meja sirkulasi pada jam layanan (${escapeHtml(hours)})${anyLate ? "; denda berhenti dihitung saat bukunya diterima" : ""}.${escapeHtml(extend)} <a href="${escapeHtml(link)}">Buka Jadwal saya</a>.</p>
+<p>Serahkan bukunya di meja sirkulasi pada jam layanan (${escapeHtml(hours)})${anyLate ? "; denda berhenti dihitung saat bukunya diterima" : ""}. <a href="${escapeHtml(link)}">Buka Jadwal saya</a>.</p>
 <p style="color:#5a6a65;font-size:13px">Pengingat ini bisa dimatikan di halaman Jadwal saya.</p>
 </div>`;
   return { subject, text, html, whatsapp: [intro, "", ...lines, "", outro].join("\n") };

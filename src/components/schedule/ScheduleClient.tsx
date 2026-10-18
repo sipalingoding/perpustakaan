@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { cancelBooking, extendLoan, setDueReminder } from "@/app/jadwal/actions";
+import { cancelBooking, setDueReminder } from "@/app/jadwal/actions";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { Alert, ArrowRight, CalendarCheck, ChevronLeft, ChevronRight, Clock, ReturnBook, Spinner } from "@/components/icons";
+import { Alert, ArrowRight, ChevronLeft, ChevronRight, Clock, ReturnBook } from "@/components/icons";
 import { ReturnDialog } from "@/components/schedule/ReturnDialog";
 import { useToast } from "@/components/Toast";
 import { Hourglass } from "@/components/illustrations/Hourglass";
@@ -13,7 +13,7 @@ import { OverdueClock } from "@/components/illustrations/OverdueClock";
 import { RoundButton } from "@/components/RoundButton";
 import { ui } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import { EXTENSION_DAYS, formatHour } from "@/lib/library";
+import { formatHour } from "@/lib/library";
 import { BULAN, DAY, formatDay, formatLong, formatShort, utc } from "@/lib/dates";
 import { FINE_PER_DAY, fineFor, overdueDays, rupiah } from "@/lib/fine";
 import type { ScheduleData, ScheduleEvent, ScheduleLoan } from "@/lib/server/schedule";
@@ -43,7 +43,14 @@ type Cell =
       time: number;
       day: number;
       sunday: boolean;
-      lanes: Array<{ id: string; on: boolean; late: boolean; start: boolean; end: boolean; loan: ScheduleLoan }>;
+      lanes: Array<{
+        id: string;
+        on: boolean;
+        late: boolean;
+        start: boolean;
+        end: boolean;
+        loan: ScheduleLoan;
+      }>;
       /** Agenda yang diikuti pada hari ini. */
       agenda: ScheduleEvent[];
       tag?: keyof typeof TAG_STYLE;
@@ -87,7 +94,14 @@ export function ScheduleClient({ data }: { data: ScheduleData }) {
       const on = t >= loan.start && t <= end;
       if (on && t === loan.due && !tag) tag = "Kembali";
       if (on && isLate(loan) && t === today) tag = "Telat";
-      return { id: loan.id, on, late: on && t > loan.due, start: t === loan.start, end: t === end, loan };
+      return {
+        id: loan.id,
+        on,
+        late: on && t > loan.due,
+        start: t === loan.start,
+        end: t === end,
+        loan,
+      };
     });
     if (!tag) {
       const starting = inMonth.find((l) => l.start === t);
@@ -154,28 +168,11 @@ export function ScheduleClient({ data }: { data: ScheduleData }) {
       }
       notify({
         kind: "ok",
-        text: next ? "Pengingat menyala: kami kirim email dan WhatsApp sehari sebelum jatuh tempo, dan lagi bila terlambat." : "Pengingat jatuh tempo dimatikan.",
+        text: next
+          ? "Pengingat menyala: kami kirim email dan WhatsApp sehari sebelum jatuh tempo, dan lagi bila terlambat."
+          : "Pengingat jatuh tempo dimatikan.",
       });
     });
-  };
-
-  const extend = async (l: ScheduleLoan) => {
-    if (busyId) return;
-    setBusyId(l.id);
-    try {
-      const result = await extendLoan(l.id);
-      if (!result.ok) return notify({ kind: "error", text: result.error });
-      notify({
-        kind: "ok",
-        title: "Pinjaman diperpanjang",
-        text: `Kembalikan “${l.title}” paling lambat ${formatDay(Date.parse(result.dueOn))}.`,
-      });
-      startTransition(() => router.refresh());
-    } catch {
-      notify({ kind: "error", text: `“${l.title}” gagal diperpanjang. Periksa koneksi lalu coba lagi.` });
-    } finally {
-      setBusyId(null);
-    }
   };
 
   const cancel = async (l: ScheduleLoan) => {
@@ -185,10 +182,16 @@ export function ScheduleClient({ data }: { data: ScheduleData }) {
       const result = await cancelBooking(l.id);
       if (!result.ok) return notify({ kind: "error", text: result.error });
       setCancelling(null);
-      notify({ kind: "ok", text: `Booking “${l.title}” dibatalkan. Bukunya terbuka lagi untuk anggota lain.` });
+      notify({
+        kind: "ok",
+        text: `Booking “${l.title}” dibatalkan. Bukunya terbuka lagi untuk anggota lain.`,
+      });
       startTransition(() => router.refresh());
     } catch {
-      notify({ kind: "error", text: `Booking “${l.title}” gagal dibatalkan. Periksa koneksi lalu coba lagi.` });
+      notify({
+        kind: "error",
+        text: `Booking “${l.title}” gagal dibatalkan. Periksa koneksi lalu coba lagi.`,
+      });
     } finally {
       setBusyId(null);
     }
@@ -439,72 +442,59 @@ export function ScheduleClient({ data }: { data: ScheduleData }) {
               const total = Math.max((l.due - l.start) / DAY, 1);
               const used = Math.min((today - l.start) / DAY, total);
               return (
-                <article key={l.id} className="flex items-start gap-4 border-t border-line-2 py-4">
-                  <MiniCover color={l.color} src={l.cover} />
-                  <div className="flex min-w-0 flex-1 flex-col gap-[9px]">
-                    <div>
-                      <h3 className="m-0 text-base leading-snug font-bold">{l.title}</h3>
-                      <p className="mt-0.5 mb-0 text-[13px] text-ink-3">{l.author}</p>
-                    </div>
-                    <span className="block h-2 overflow-hidden rounded-full bg-[#E1E6DF]" aria-hidden="true">
-                      <span
-                        className="block h-full rounded-full transition-[width] duration-700"
-                        style={{
-                          width: `${Math.round((used / total) * 100)}%`,
-                          backgroundColor: late ? LATE_COLOR : l.color,
-                        }}
-                      />
-                    </span>
-                    <div className="flex flex-wrap justify-between gap-x-2.5 gap-y-1 text-[13px] text-ink-2">
-                      <span>Kembali {formatDay(l.due)}</span>
-                      {late ? (
-                        <strong className="text-accent-700">Terlambat {days} hari</strong>
-                      ) : (
-                        <strong>{Math.round((l.due - today) / DAY)} hari lagi</strong>
+                <article key={l.id} className="flex flex-col gap-3 border-t border-line-2 py-4">
+                  <div className="flex items-start gap-4">
+                    <MiniCover color={l.color} src={l.cover} />
+                    <div className="flex min-w-0 flex-1 flex-col gap-[9px]">
+                      <div>
+                        <h3 className="m-0 text-base leading-snug font-bold">{l.title}</h3>
+                        <p className="mt-0.5 mb-0 text-[13px] text-ink-3">{l.author}</p>
+                      </div>
+                      <span className="block h-2 overflow-hidden rounded-full bg-[#E1E6DF]" aria-hidden="true">
+                        <span
+                          className="block h-full rounded-full transition-[width] duration-700"
+                          style={{
+                            width: `${Math.round((used / total) * 100)}%`,
+                            backgroundColor: late ? LATE_COLOR : l.color,
+                          }}
+                        />
+                      </span>
+                      <div className="flex flex-wrap justify-between gap-x-2.5 gap-y-1 text-[13px] text-ink-2">
+                        <span>Kembali {formatDay(l.due)}</span>
+                        {late ? (
+                          <strong className="text-accent-700">Terlambat {days} hari</strong>
+                        ) : (
+                          <strong>{Math.round((l.due - today) / DAY)} hari lagi</strong>
+                        )}
+                      </div>
+                      {late && (
+                        <p className="m-0 rounded-[14px] bg-accent-50 px-3.5 py-2.5 text-[13px] leading-snug text-accent-700">
+                          Denda <strong>{rupiah(fineFor(days))}</strong> ({days} hari × {rupiah(FINE_PER_DAY)}).
+                          {l.returnRequested
+                            ? "Denda berhenti dihitung saat pustakawan menerima bukunya."
+                            : "Kembalikan ke meja sirkulasi untuk menghentikannya."}
+                        </p>
                       )}
                     </div>
-                    {late && (
-                      <p className="m-0 rounded-[14px] bg-accent-50 px-3.5 py-2.5 text-[13px] leading-snug text-accent-700">
-                        Denda <strong>{rupiah(fineFor(days))}</strong> ({days} hari × {rupiah(FINE_PER_DAY)}).
-                        {l.returnRequested
-                          ? "Denda berhenti dihitung saat pustakawan menerima bukunya."
-                          : "Kembalikan ke meja sirkulasi untuk menghentikannya."}
-                      </p>
-                    )}
-                    {l.returnRequested ? (
-                      <p className="m-0 flex items-start gap-2 rounded-[14px] bg-secondary-100 px-3.5 py-2.5 text-[13px] leading-snug text-secondary-600">
-                        <Clock size={18} className="mt-px shrink-0" />
-                        <span>
-                          <strong>Menunggu konfirmasi pustakawan.</strong> Serahkan bukunya ke meja sirkulasi; statusnya
-                          berubah jadi dikembalikan setelah petugas menerimanya.
-                        </span>
-                      </p>
-                    ) : (
-                      <div className="flex flex-wrap items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setReturning(l)}
-                          className={cn(ui.btn, ui.ghost, "min-h-11 px-4 text-sm")}
-                        >
-                          <ReturnBook size={18} />
-                          Kembalikan buku
-                        </button>
-                        {!late && !l.extended && (
-                          <button
-                            type="button"
-                            onClick={() => extend(l)}
-                            disabled={busyId !== null}
-                            aria-busy={busyId === l.id}
-                            className={cn(ui.btn, ui.ghost, "min-h-11 px-4 text-sm disabled:cursor-wait disabled:opacity-70")}
-                          >
-                            {busyId === l.id ? <Spinner size={18} /> : <CalendarCheck size={18} />}
-                            Perpanjang {EXTENSION_DAYS} hari
-                          </button>
-                        )}
-                        {l.extended && <span className="text-[13px] text-ink-3">Sudah diperpanjang sekali.</span>}
-                      </div>
-                    )}
                   </div>
+                  {l.returnRequested ? (
+                    <p className="m-0 flex items-start gap-2 rounded-[14px] bg-secondary-100 px-3.5 py-2.5 text-[13px] leading-snug text-secondary-600">
+                      <Clock size={18} className="mt-px shrink-0" />
+                      <span>
+                        <strong>Menunggu konfirmasi pustakawan.</strong> Serahkan bukunya ke meja sirkulasi; statusnya
+                        berubah jadi dikembalikan setelah petugas menerimanya.
+                      </span>
+                    </p>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setReturning(l)}
+                      className={cn(ui.btn, ui.ghost, "min-h-11 w-full px-4 text-sm")}
+                    >
+                      <ReturnBook size={18} />
+                      Kembalikan buku
+                    </button>
+                  )}
                 </article>
               );
             })}
@@ -555,7 +545,9 @@ export function ScheduleClient({ data }: { data: ScheduleData }) {
             <label className="flex min-h-11 cursor-pointer items-center justify-between gap-4">
               <span>
                 <strong className="block text-[15px]">Ingatkan aku</strong>
-                <span className="mt-0.5 block text-[13px] text-ink-3">Email dan WhatsApp ke kontak terdaftar, sehari sebelum jatuh tempo, dan lagi bila bukunya terlambat.</span>
+                <span className="mt-0.5 block text-[13px] text-ink-3">
+                  Email dan WhatsApp ke kontak terdaftar, sehari sebelum jatuh tempo, dan lagi bila bukunya terlambat.
+                </span>
               </span>
               <input type="checkbox" className="switch" checked={remind} onChange={toggleRemind} />
             </label>
@@ -604,7 +596,11 @@ export function ScheduleClient({ data }: { data: ScheduleData }) {
 
 function AgendaSwatch({ event }: { event: ScheduleEvent }) {
   return (
-    <span aria-hidden="true" className="inline-block size-3 shrink-0 rounded-[4px]" style={{ backgroundColor: event.color }} />
+    <span
+      aria-hidden="true"
+      className="inline-block size-3 shrink-0 rounded-[4px]"
+      style={{ backgroundColor: event.color }}
+    />
   );
 }
 
