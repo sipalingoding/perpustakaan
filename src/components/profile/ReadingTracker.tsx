@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { saveReadingProgress } from "@/app/profil/actions";
+import { BookCover } from "@/components/catalog/BookCover";
 import { ArrowRight, Check, Spinner } from "@/components/icons";
 import { LadderReader } from "@/components/illustrations/LadderReader";
 import { ui } from "@/components/ui";
@@ -91,13 +92,9 @@ function TrackerRow({ entry }: { entry: ReadingEntry }) {
         href={`/buku/${entry.slug}`}
         aria-hidden="true"
         tabIndex={-1}
-        className="spine-shade relative h-[76px] w-[52px] shrink-0 overflow-hidden rounded-[3px_8px_8px_3px] shadow-[0_10px_16px_-10px_rgba(29,43,40,.6)]"
-        style={{ backgroundColor: entry.coverBg }}
+        className="@container relative aspect-[2/3] w-[52px] shrink-0 self-start overflow-hidden rounded-[3px_8px_8px_3px] shadow-[0_10px_16px_-10px_rgba(29,43,40,.6)]"
       >
-        {entry.cover && (
-          // eslint-disable-next-line @next/next/no-img-element -- sampul kecil dari rute sendiri
-          <img src={entry.cover} alt="" loading="lazy" className="absolute inset-0 size-full object-cover" />
-        )}
+        <BookCover cover={entry.cover} className="rounded-[inherit]" />
       </Link>
       <div className="flex min-w-0 flex-1 flex-col gap-2">
         <div>

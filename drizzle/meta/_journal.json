@@ -155,6 +155,20 @@
       "when": 1792221983182,
       "tag": "0021_notifikasi_buku_baru",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1792309504126,
+      "tag": "0022_batas_masuk",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1792310872611,
+      "tag": "0023_kondisi_buku",
+      "breakpoints": true
     }
   ]
 }

@@ -10,6 +10,7 @@ import { formatDay } from "@/lib/dates";
 import { formatHour } from "@/lib/library";
 import { notify } from "@/lib/server/notifications";
 import { getViewer } from "@/lib/server/session";
+import { closedError } from "@/lib/server/library-status";
 import { isInSchedule } from "@/lib/server/slots";
 
 export type BorrowResult = { ok: true } | { ok: false; error: string };
@@ -41,37 +42,49 @@ export async function borrowBook(input: z.input<typeof request>): Promise<Borrow
   if (!isInSchedule(await pickupSchedule(), pickupOn, pickupHour)) {
     return { ok: false, error: "Tanggal atau jam itu sudah tidak tersedia. Pilih jadwal lain dalam 7 hari ke depan." };
   }
+  const closed = await closedError("booking");
+  if (closed) return { ok: false, error: closed };
   const dueOn = addDays(pickupOn, days);
   // Booking orang lain yang tidak diambil sampai akhir harinya melepaskan eksemplarnya lebih dulu.
   await expireMissedPickups();
 
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const { rows } = await db.execute<{ id: string; title: string }>(sql`
-        insert into loans (user_id, copy_id, status, start_on, pickup_hour, due_on)
-        select ${viewer.id}, c.id, 'reserved', ${pickupOn}::date, ${pickupHour}, ${dueOn}::date
-        from book_copies c
-        join books b on b.id = c.book_id
-        where b.slug = ${slug}
-          and not exists (select 1 from loans l where l.copy_id = c.id and l.status in ('reserved', 'active'))
-          and not exists (
-            select 1 from loans l
-            join book_copies c2 on c2.id = l.copy_id
-            where c2.book_id = b.id and l.user_id = ${viewer.id} and l.status in ('reserved', 'active')
-          )
-        order by c.code
-        limit 1
-        returning id, (select title from books where slug = ${slug}) as title`);
-      if (rows.length === 0) {
+      const booked = await db.transaction(async (tx) => {
+        // Satu anggota satu eksemplar per judul: permintaan bersamaan dari anggota yang sama (dua tab, klik ganda)
+        // menunggu giliran di sini, jadi pemeriksaan "belum pinjam buku ini" di bawah tidak bisa lolos dua kali.
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`pinjam:${viewer.id}:${slug}`}))`);
+        const { rows } = await tx.execute<{ id: string; title: string }>(sql`
+          insert into loans (user_id, copy_id, status, start_on, pickup_hour, due_on)
+          select ${viewer.id}, c.id, 'reserved', ${pickupOn}::date, ${pickupHour}, ${dueOn}::date
+          from book_copies c
+          join books b on b.id = c.book_id
+          where b.slug = ${slug}
+            and not exists (select 1 from loans l where l.copy_id = c.id and l.status in ('reserved', 'active'))
+            and not exists (
+              select 1 from loans l
+              join book_copies c2 on c2.id = l.copy_id
+              where c2.book_id = b.id and l.user_id = ${viewer.id} and l.status in ('reserved', 'active')
+            )
+          order by c.code
+          limit 1
+          returning id, (select title from books where slug = ${slug}) as title`);
+        if (rows.length === 0) return null;
+        await notify(
+          {
+            userId: viewer.id,
+            kind: "peminjaman",
+            title: "Buku terbooking",
+            body: `“${rows[0].title}” terbooking untukmu. Ambil di meja sirkulasi pada ${formatDay(Date.parse(pickupOn))}, pukul ${formatHour(pickupHour)}.`,
+            href: `/buku/${slug}`,
+          },
+          tx,
+        );
+        return rows[0];
+      });
+      if (!booked) {
         return { ok: false, error: "Buku ini sudah kamu pinjam atau pesan, atau semua eksemplarnya sedang dipinjam." };
       }
-      await notify({
-        userId: viewer.id,
-        kind: "peminjaman",
-        title: "Buku terbooking",
-        body: `“${rows[0].title}” terbooking untukmu. Ambil di meja sirkulasi pada ${formatDay(Date.parse(pickupOn))}, pukul ${formatHour(pickupHour)}.`,
-        href: `/buku/${slug}`,
-      });
       updateTag("catalog");
       revalidatePath("/jadwal");
       revalidatePath("/profil");

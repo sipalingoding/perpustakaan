@@ -3,6 +3,7 @@ import { and, asc, eq, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { bookCopies, books, loans, user, type Notifications } from "@/db/schema";
 import type { AvatarLook } from "@/components/Avatar";
+import type { CoverData } from "@/components/catalog/BookCover";
 import type { Category } from "@/lib/books";
 import { cardValidUntil, formatMemberNo, monthYear } from "@/lib/member";
 import { AVATAR_PRESETS, sameLook, type Gender } from "@/lib/people";
@@ -20,8 +21,7 @@ export type ShelfEntry = {
   startOn: string;
   dueOn: string;
   returnedOn: string | null;
-  coverBg: string;
-  coverInk: string;
+  cover: CoverData;
 };
 
 /** Buku yang sedang dipinjam beserta catatan halaman terakhir yang dibaca. */
@@ -33,8 +33,7 @@ export type ReadingEntry = {
   /** Total halaman buku; kosong bila belum tercatat di katalog. */
   pages: number | null;
   currentPage: number;
-  cover: string | null;
-  coverBg: string;
+  cover: CoverData;
   dueOn: string;
 };
 
@@ -63,6 +62,40 @@ export type ProfileData = {
 };
 
 /** Semua yang dibutuhkan halaman Profil untuk satu anggota. */
+/** Kolom sampul, supaya buku di profil tampil sama dengan di katalog. */
+const coverColumns = {
+  title: books.title,
+  author: books.author,
+  category: books.category,
+  motif: books.motif,
+  coverBg: books.coverBg,
+  coverInk: books.coverInk,
+  coverKey: books.coverKey,
+};
+
+type CoverRow = {
+  title: string;
+  author: string;
+  category: string;
+  motif: CoverData["motif"];
+  coverBg: string;
+  coverInk: string;
+  coverKey: string | null;
+};
+
+function withCover<T extends CoverRow>({ motif, coverBg, coverInk, coverKey, ...row }: T) {
+  const cover: CoverData = {
+    title: row.title,
+    author: row.author,
+    category: row.category,
+    motif,
+    bg: coverBg,
+    ink: coverInk,
+    image: coverKey ? fileUrl(coverKey) : null,
+  };
+  return { ...row, cover };
+}
+
 export async function getProfilePage(userId: string): Promise<ProfileData | undefined> {
   await expireMissedPickups();
   const [profile, [account]] = await Promise.all([
@@ -77,16 +110,12 @@ export async function getProfilePage(userId: string): Promise<ProfileData | unde
   const shelf = await db
     .select({
       id: loans.id,
-      title: books.title,
-      author: books.author,
       slug: books.slug,
-      category: books.category,
       status: loans.status,
       startOn: loans.startOn,
       dueOn: loans.dueOn,
       returnedOn: loans.returnedOn,
-      coverBg: books.coverBg,
-      coverInk: books.coverInk,
+      ...coverColumns,
     })
     .from(loans)
     .innerJoin(bookCopies, eq(bookCopies.id, loans.copyId))
@@ -103,13 +132,10 @@ export async function getProfilePage(userId: string): Promise<ProfileData | unde
   const reading = await db
     .select({
       loanId: loans.id,
-      title: books.title,
-      author: books.author,
       slug: books.slug,
       pages: books.pages,
       currentPage: sql<number>`coalesce(${loans.currentPage}, 0)`,
-      coverKey: books.coverKey,
-      coverBg: books.coverBg,
+      ...coverColumns,
       dueOn: loans.dueOn,
     })
     .from(loans)
@@ -136,11 +162,11 @@ export async function getProfilePage(userId: string): Promise<ProfileData | unde
     memberNo: formatMemberNo(account.createdAt, profile.memberNo),
     since: monthYear(account.createdAt),
     validUntil: monthYear(cardValidUntil(account.createdAt)),
-    reading: reading.map(({ coverKey, ...r }) => ({ ...r, cover: coverKey ? fileUrl(coverKey) : null })),
+    reading: reading.map(withCover),
     favs: profile.favCategories as Category[],
     notifs: profile.notifications,
     year,
-    shelf: shelf as ShelfEntry[],
+    shelf: shelf.map(withCover) as ShelfEntry[],
   };
 }
 

@@ -12,7 +12,7 @@ export type AdminDonation = {
   title: string;
   author: string;
   category: string;
-  condition: "baru" | "sangat" | "baik";
+  condition: "baru" | "baik" | "kurang";
   qty: number;
   note: string;
   method: "antar" | "jemput";

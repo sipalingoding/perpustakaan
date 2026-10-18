@@ -26,6 +26,8 @@ export type ScheduleLoan = {
   myReview: { rating: number; body: string } | null;
   /** Pengembalian sudah diajukan; menunggu pustakawan menerima bukunya. */
   returnRequested: boolean;
+  /** Sudah pernah diperpanjang (perpanjangan hanya sekali). */
+  extended: boolean;
 };
 
 /** Agenda yang diikuti anggota, ditandai di kalender. */
@@ -83,6 +85,7 @@ export async function getSchedule(userId: string): Promise<ScheduleData> {
         pickupHour: loans.pickupHour,
         returnedOn: loans.returnedOn,
         returnRequested: sql<boolean>`${loans.returnRequestedAt} is not null`,
+        extensions: loans.extensions,
         reviewRating: bookReviews.rating,
         reviewBody: bookReviews.body,
       })
@@ -141,6 +144,7 @@ export async function getSchedule(userId: string): Promise<ScheduleData> {
       due: Date.parse(r.status === "returned" && r.returnedOn ? r.returnedOn : r.dueOn),
       pickupHour: r.pickupHour,
       returnRequested: r.returnRequested,
+      extended: r.extensions > 0,
       myReview: r.reviewRating !== null ? { rating: r.reviewRating, body: r.reviewBody ?? "" } : null,
     })),
     events: joined.map((e) => ({

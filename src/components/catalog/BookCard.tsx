@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
 import { ArrowRight, CalendarClock, CheckCircle, Clock, History, Star } from "@/components/icons";
 import { formatRating } from "@/components/Stars";
-import { CoverMotif } from "@/components/catalog/CoverMotif";
+import { BookCover } from "@/components/catalog/BookCover";
 import type { Book } from "@/lib/books";
 import { cn } from "@/lib/cn";
 
@@ -65,30 +65,18 @@ export function BookCard({ book, style }: { book: Book; style?: CSSProperties })
             <ArrowRight className="size-[1.25em]" />
           </span>
         </span>
-        <span
-          aria-hidden="true"
-          className="cover spine-shade absolute inset-0 flex flex-col gap-[3cqw] rounded-[3px_10px_10px_3px] pt-[10cqw] pr-[8cqw] pb-[8cqw] pl-[12cqw]"
-          style={{ backgroundColor: book.cover.bg, color: book.cover.ink }}
-        >
-          <span className="text-[4.4cqw] font-bold tracking-[0.22em] uppercase">{book.category}</span>
-          <span className="display text-[9cqw] leading-[1.08]">{book.title}</span>
-          <span className="flex flex-1 items-center justify-center">
-            <CoverMotif motif={book.motif} className="block h-auto w-[74%]" />
-          </span>
-          <span className="text-[5cqw] font-semibold">{book.author}</span>
-          {book.coverImage && (
-            <>
-              {/* eslint-disable-next-line @next/next/no-img-element -- sampul sudah diperkecil di server */}
-              <img
-                src={book.coverImage}
-                alt=""
-                loading="lazy"
-                className="absolute inset-0 size-full rounded-[inherit] object-cover"
-              />
-              <span className="spine-shade absolute inset-0 rounded-[inherit]" />
-            </>
-          )}
-        </span>
+        <BookCover
+          className="cover"
+          cover={{
+            title: book.title,
+            author: book.author,
+            category: book.category,
+            motif: book.motif,
+            bg: book.cover.bg,
+            ink: book.cover.ink,
+            image: book.coverImage ?? null,
+          }}
+        />
       </span>
       <span className="flex flex-col gap-1">
         <span className="text-[15px] leading-snug font-bold min-[561px]:text-[17px]">{book.title}</span>

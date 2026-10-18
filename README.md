@@ -1,8 +1,8 @@
 # Lembar — perpustakaan yang tenang
 
 Aplikasi web perpustakaan dengan Next.js 16 (App Router) dan Tailwind CSS 4, hasil konversi desain Lembar.
-Semua data masih berupa **data contoh** (judul buku, anggota, dan jadwal fiktif), jadi aplikasi ini siap
-dijalankan dan disambungkan ke backend nanti.
+Data (katalog, anggota, pinjaman, sumbangan, agenda) disimpan di Postgres Neon; `npm run db:seed` hanya mengisi data
+contoh untuk database lokal.
 
 ## Menjalankan
 
@@ -53,6 +53,23 @@ neon branch create --name dev --parent production -o json > /dev/null
 neon env pull --branch dev --file .env.dev     # lalu jalankan aplikasi dengan variabel ini
 ```
 
+**API dengan JWT** (`src/lib/server/bearer.ts`): selain sesi cookie untuk situs, Route Handler di `/api` bisa dipakai
+klien lain dengan token di header `Authorization: Bearer <access_token>`. JWT-nya diterbitkan Neon Auth (EdDSA, berlaku
+15 menit) dan diverifikasi dengan JWKS (`NEON_AUTH_JWKS_URL`, bawaannya `<NEON_AUTH_BASE_URL>/.well-known/jwks.json`).
+Tanpa token, token tidak sah, atau token kedaluwarsa dijawab **403**.
+
+| Endpoint | Isi |
+| --- | --- |
+| `POST /api/token` | `{ email, password }` atau `{ memberNo, password }` → `{ token_type, access_token, expires_in, refresh_token }` |
+| `POST /api/token/refresh` | `{ refreshToken }` → access token baru |
+| `POST /api/token/revoke` | `{ refreshToken }` → keluar (access token yang sudah terbit tetap berlaku sampai habis) |
+| `GET /api/saya` | Akun pemilik token |
+| `GET /api/peminjaman` | Pinjaman aktif pemilik token |
+| `GET /api/admin/peminjaman` | Booking dan pinjaman berjalan; selain pustakawan mendapat 403 |
+
+Route Handler baru yang khusus anggota cukup memanggil `requireBearer(request)` (atau
+`requireBearer(request, { role: "pustakawan" })`) lalu mengembalikan `auth.response` bila `!auth.ok`.
+
 **Pemindahan dari Better Auth** (sekali, sudah dijalankan di `production`): `npm run db:migrate-neon` memindahkan akun
 ke Neon Auth dengan hash kata sandi yang sama (anggota tetap masuk dengan kata sandi lamanya) dan menyalin foto serta
 sampul ke bucket. Migrasi `0007` menghapus tabel lama dan menolak berjalan bila masih ada data yang belum dipindah.
@@ -68,9 +85,7 @@ katalog dan anggota contoh, tapi login tetap lewat Neon Auth, jadi akun contoh d
 - `proxy.ts` hanya memeriksa cookie sesi untuk mengalihkan tamu; halaman tetap harus memanggil `requireViewer()`.
 - Build produksi membaca database untuk `generateStaticParams`, jadi `DATABASE_URL` dan minimal satu buku harus ada.
 
-Tahap integrasi: katalog, detail buku (termasuk memesan buku), login, header, profil, papan baca, sumbangan,
-dan Jadwal sudah memakai database. Yang belum: layar petugas untuk menandai buku sudah diambil atau dikembalikan,
-dan mencatat pembayaran denda. Pesanan berstatus "menunggu diambil" belum punya batas waktu otomatis.
+Semua layar sudah memakai database. Yang belum: mencatat pembayaran denda (denda hanya dihitung dan ditampilkan).
 `src/lib/books.ts`, `members.ts`, dan `loans.ts` sekarang hanya sumber data untuk skrip seed.
 
 Meminjam buku: anggota memilih tanggal ambil (hari ini sampai 7 hari ke depan; hari ini hanya bila masih ada slot)
@@ -78,7 +93,10 @@ dan jam kedatangan (10.00–16.00, `VISIT_HOURS` di `src/lib/library.ts`), lalu 
 peminjaman" membuat booking berstatus `reserved`, tampil sebagai **Terbooking**. Saat anggota datang, pustakawan
 menekan **Approve** di `/admin/peminjaman`: status jadi `active` (**Dipinjam**) dan masa pinjam dihitung ulang mulai
 hari itu dengan lama yang sama. Server memilih satu eksemplar kosong di dalam satu INSERT dan indeks unik menjaganya,
-jadi dua anggota tidak bisa memegang eksemplar yang sama. Satu anggota hanya boleh memegang satu eksemplar per judul.
+jadi dua anggota tidak bisa memegang eksemplar yang sama. Satu anggota hanya boleh memegang satu eksemplar per judul
+(dijaga kunci per anggota per judul di dalam transaksi booking, jadi klik ganda di dua tab pun tidak lolos).
+Selama perpustakaan ditutup manual dari dasbor, booking dan jadwal sumbangan baru ditolak.
+Anggota bisa membatalkan booking dari Jadwal saya, dan pustakawan bisa membatalkannya dari `/admin/peminjaman`.
 Booking yang tidak diambil sampai akhir hari jadwalnya batal otomatis (status `cancelled`) dan eksemplarnya terbuka
 lagi. Belum ada penjadwal, jadi `expireMissedPickups()` dijalankan saat booking dibuat dan saat Jadwal, Profil, halaman
 buku anggota, dan admin dibuka; katalog menghitung ketersediaan dengan aturan yang sama (`holdsCopy`), jadi selalu benar
@@ -91,7 +109,14 @@ membuka daftar menandai semuanya dibaca. Pengingat jatuh tempo dihitung langsung
 
 Denda keterlambatan Rp5.000 per hari (`src/lib/fine.ts`) dihitung dari tanggal jatuh tempo dan tanggal hari ini
 menurut zona waktu Jakarta; denda tidak disimpan, jadi berhenti bertambah saat petugas menandai buku kembali.
-Pinjaman tidak bisa diperpanjang dari aplikasi; anggota mengembalikan buku sebelum jatuh tempo.
+Pinjaman aktif bisa diperpanjang sekali, 7 hari (`EXTENSION_DAYS` di `src/lib/library.ts`), dari Jadwal saya, selama
+belum terlambat dan pengembaliannya belum diajukan. Pengingat email/WhatsApp dikirim sehari sebelum jatuh tempo, lalu
+untuk buku yang terlambat sehari setelah jatuh tempo dan setiap 3 hari sesudahnya.
+
+Masuk dengan kata sandi dibatasi di aplikasi (`src/lib/server/login-throttle.ts`, tabel `login_failures`), karena Neon
+Auth sendiri tidak membatasi percobaan yang gagal: 8 kali gagal per akun atau 30 kali per alamat IP dalam 15 menit
+diblokir sampai 15 menit. Berlaku untuk formulir masuk (`/api/auth`), nomor anggota, `/api/token`, dan konfirmasi
+kata sandi saat hapus akun.
 
 ## Dasbor pustakawan
 
@@ -142,10 +167,10 @@ Selain pustakawan, `/admin` tampil sebagai halaman tidak ditemukan.
 | `/profil` | Profil anggota, kartu anggota yang bisa dibalik, target membaca, rak bacaan, akun, dan preferensi. |
 | `/anggota` | Papan baca (peringkat anggota per periode) dan rak koleksi tiap anggota. |
 | `/sumbang` | Formulir sumbang buku 3 langkah dengan pratinjau sampul dan plakat ex libris. |
-| `/agenda` | Agenda kopi darat bersama @kopiku_literasi (2 Jam Tanpa Gadget, Basa-Basi, KKN, Ngopi): tiket jadwal terdekat, jadwal berikutnya, penjelasan dan dokumentasi foto tiap agenda. Terbuka untuk tamu; ikut/batal ikut perlu masuk. |
+| `/agenda` | Agenda kopi darat bersama @kopiku_literasi (2 Jam Tanpa Gadget, Basa-Basi, KKN, Ngopi): tiket jadwal terdekat, jadwal berikutnya, penjelasan dan dokumentasi foto tiap agenda. Khusus anggota; poster agenda terdekat juga tampil untuk tamu di beranda. |
 | `/admin` | Khusus pustakawan: daftar koleksi dengan stok, tambah buku (`/admin/buku/baru`), ubah dan hapus buku. |
-| `/admin/peminjaman` | Khusus pustakawan: booking dan pinjaman yang berjalan. "Approve" saat anggota mengambil buku mengubah status Terbooking jadi Dipinjam; "Terima pengembalian" untuk buku yang pengembaliannya diajukan anggota mengubahnya jadi dikembalikan (eksemplar tersedia lagi, denda dihitung sampai hari itu). |
-| `/admin/sumbangan` | Khusus pustakawan: sumbangan anggota. "Setujui" mengubah status jadi dalam pengiriman; "Konfirmasi diterima" (setelah buku tiba) jadi diterima. |
+| `/admin/peminjaman` | Khusus pustakawan: booking dan pinjaman yang berjalan. "Approve" saat anggota mengambil buku mengubah status Terbooking jadi Dipinjam; "Terima pengembalian" untuk buku yang pengembaliannya diajukan anggota, atau "Terima buku" untuk buku yang langsung dibawa ke meja, mengubahnya jadi dikembalikan (eksemplar tersedia lagi, denda dihitung sampai hari itu). "Batalkan" membatalkan booking dan mengabari anggotanya. |
+| `/admin/sumbangan` | Khusus pustakawan: sumbangan anggota. "Setujui" mengubah status jadi dalam pengiriman; "Konfirmasi diterima" (setelah buku tiba) jadi diterima; "Tolak" (dengan alasan opsional untuk penyumbang) jadi ditolak. |
 | `/admin/agenda` | Khusus pustakawan: tambah, ubah, dan hapus jadwal agenda (tanggal, jam, tempat, kuota, catatan), lihat peserta, dan unggah foto dokumentasi per agenda. |
 
 Pilihan **jenis kelamin** di halaman Profil disimpan di database, sehingga ilustrasi karakter, avatar di

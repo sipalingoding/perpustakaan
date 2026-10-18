@@ -7,6 +7,7 @@ import { db } from "@/db";
 import { bookCondition, categories, donationMethod, donations } from "@/db/schema";
 import { isAllowedCoverUrl, normalizeIsbn, searchForForm, type SearchResponse } from "@/lib/server/book-sources";
 import { isOpenSlot } from "@/lib/server/donations";
+import { closedError } from "@/lib/server/library-status";
 import { notify } from "@/lib/server/notifications";
 import { getViewer } from "@/lib/server/session";
 
@@ -53,6 +54,9 @@ export async function createDonation(input: z.input<typeof donation>): Promise<D
   if (!known) {
     return { ok: false, error: "Kategori itu baru saja diubah pustakawan. Muat ulang halaman lalu pilih kategori lagi." };
   }
+
+  const closed = await closedError("jadwal sumbangan");
+  if (closed) return { ok: false, error: closed };
 
   // Tanggal dan jam hanya boleh salah satu dari pilihan yang ditawarkan, dihitung ulang di server (jam Jakarta).
   if (!(await isOpenSlot(d.scheduledOn, d.scheduledHour))) {

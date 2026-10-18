@@ -21,8 +21,8 @@ import { useErrorToast, useToast } from "@/components/Toast";
 
 const CONDITIONS = [
   { key: "baru", title: "Baru", desc: "Masih bersegel atau belum pernah dibaca." },
-  { key: "sangat", title: "Sangat baik", desc: "Seperti baru, tanpa coretan atau lipatan." },
-  { key: "baik", title: "Baik", desc: "Ada tanda pernah dibaca, halaman lengkap." },
+  { key: "baik", title: "Baik", desc: "Pernah dibaca dan terawat, halaman lengkap." },
+  { key: "kurang", title: "Kurang baik", desc: "Ada coretan, lipatan, atau sampul rusak, tapi halaman lengkap." },
 ] as const;
 const METHODS = [
   { key: "antar", title: "Antar ke meja sirkulasi", desc: `Bawa bukunya pada jam layanan, ${LIBRARY.hours}.` },
@@ -59,7 +59,7 @@ const BLANK: Form = {
   title: "",
   author: "",
   category: "",
-  condition: "sangat",
+  condition: "baik",
   qty: 1,
   note: "",
   method: "antar",
@@ -161,7 +161,7 @@ export function DonateClient({
           sourceRef: source.workKey,
         },
         showName: form.showName,
-      });
+      }).catch(() => ({ ok: false as const, error: "Sumbangan gagal dikirim. Periksa koneksi lalu coba lagi." }));
       if (!result.ok) return setError(result.error);
       setCode(result.code);
       notify({ kind: "ok", text: `Sumbangan ${result.code} terkirim. Terima kasih!` });

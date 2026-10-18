@@ -6,6 +6,7 @@ import { bookCopies, books, loans } from "@/db/schema";
 import { titleOnly, type Book, type Category } from "@/lib/books";
 import { formatShort } from "@/lib/dates";
 import { holdsCopy } from "@/lib/server/loans";
+import { LIBRARY_TZ } from "@/lib/server/members";
 import { fileUrl } from "@/lib/server/storage";
 
 /** Buku sebagaimana dilihat tamu: stok dihitung dari pinjaman yang sedang memegang eksemplar. */
@@ -37,7 +38,11 @@ async function loadCatalog(): Promise<PublicBook[]> {
       total: sql<number>`count(${bookCopies.id})::int`,
       held: sql<number>`count(${loans.id})::int`,
       borrowed: sql<number>`count(${loans.id}) filter (where ${loans.status} = 'active')::int`,
-      nextDue: sql<string | null>`min(${loans.dueOn})`,
+      // Perkiraan kembali ke rak: batas kembali terdekat dari pinjaman yang sudah diambil (booking belum punya batas
+      // yang pasti). Pinjaman yang terlambat diperkirakan kembali hari ini, bukan di tanggal yang sudah lewat.
+      nextDue: sql<string | null>`to_char(case when min(${loans.dueOn}) filter (where ${loans.status} = 'active') is not null
+        then greatest(min(${loans.dueOn}) filter (where ${loans.status} = 'active'), (now() at time zone ${LIBRARY_TZ})::date)
+        end, 'YYYY-MM-DD')`,
       // Pinjaman yang benar-benar diambil (sedang dipinjam atau sudah kembali); booking yang batal tidak dihitung.
       timesBorrowed: sql<number>`(select count(*)::int from loans l join book_copies c on c.id = l.copy_id
         where c.book_id = books.id and l.status in ('active', 'returned'))`,

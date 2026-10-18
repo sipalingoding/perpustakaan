@@ -1,10 +1,10 @@
 "use server";
 
-import { and, desc, eq, inArray, isNotNull, notExists, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, notExists, sql } from "drizzle-orm";
 import { revalidatePath, updateTag } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
-import { bookCopies, books, categories, donations, libraryStatus, loans } from "@/db/schema";
+import { bookCopies, books, categories, donations, libraryStatus, loans, profiles } from "@/db/schema";
 import { formatDay } from "@/lib/dates";
 import { fineFor, overdueDays, rupiah } from "@/lib/fine";
 import { formatHour } from "@/lib/library";
@@ -305,6 +305,14 @@ async function syncCopies(tx: Tx, bookId: string, shelf: string, wanted: number)
   }
 }
 
+/** Kode galat Postgres di galat itu sendiri atau penyebabnya (driver membungkusnya). */
+function hasCode(e: unknown, code: string) {
+  for (let err = e as { code?: string; cause?: unknown } | undefined; err; err = err.cause as typeof err) {
+    if (err.code === code) return true;
+  }
+  return false;
+}
+
 function isUniqueViolation(e: unknown, constraint: string) {
   for (
     let err = e as { code?: string; constraint?: string; cause?: unknown } | undefined;
@@ -335,7 +343,16 @@ export async function deleteBook(id: string): Promise<{ ok: true } | Fail> {
       error: "Buku ini punya riwayat peminjaman, jadi tidak bisa dihapus. Kurangi eksemplarnya bila perlu.",
     };
   }
-  const [removed] = await db.delete(books).where(eq(books.id, id)).returning({ coverKey: books.coverKey });
+  let removed: { coverKey: string | null } | undefined;
+  try {
+    [removed] = await db.delete(books).where(eq(books.id, id)).returning({ coverKey: books.coverKey });
+  } catch (e) {
+    // Ada yang membooking buku ini di antara pemeriksaan di atas dan penghapusan (relasi loans -> book_copies).
+    if (hasCode(e, "23503")) {
+      return { ok: false, error: "Buku ini baru saja dibooking anggota, jadi tidak bisa dihapus. Muat ulang halaman." };
+    }
+    throw e;
+  }
   await deleteFile(removed?.coverKey);
   updateTag("catalog");
   revalidatePath("/admin");
@@ -420,6 +437,51 @@ export async function advanceDonation(
   return { ok: true, status: "dikirim" };
 }
 
+const rejectInput = z.object({
+  id: z.uuid(),
+  from: z.enum(["diajukan", "dikirim"]),
+  reason: z.string().trim().max(200, "Alasan paling panjang 200 huruf."),
+});
+
+/**
+ * Tolak sumbangan yang belum diterima (mis. buku rusak atau tidak sesuai koleksi). Penyumbang diberi notifikasi
+ * beserta alasannya bila diisi. `from` = status yang dilihat pustakawan, seperti di advanceDonation.
+ */
+export async function rejectDonation(
+  id: string,
+  from: "diajukan" | "dikirim",
+  reason = "",
+): Promise<{ ok: true } | Fail> {
+  if (!(await isLibrarian())) return NOT_ALLOWED;
+  const parsed = rejectInput.safeParse({ id, from, reason });
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Sumbangan tidak ditemukan." };
+  const done = await db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(donations)
+      .set({ status: "ditolak" })
+      .where(and(eq(donations.id, parsed.data.id), eq(donations.status, parsed.data.from)))
+      .returning({ userId: donations.userId, title: donations.title, code: donations.code });
+    if (!updated) return false;
+    await notify(
+      {
+        userId: updated.userId,
+        kind: "sumbangan",
+        title: "Sumbangan belum bisa diterima",
+        body:
+          `Maaf, “${updated.title}” (${updated.code}) belum bisa kami terima.` +
+          (parsed.data.reason ? ` Alasannya: ${parsed.data.reason}` : " Hubungi pustakawan bila ingin tahu alasannya."),
+        href: "/sumbang",
+      },
+      tx,
+    );
+    return true;
+  });
+  if (!done) return { ok: false, error: "Status sumbangan ini sudah berubah. Muat ulang halaman untuk melihat yang terbaru." };
+  revalidatePath("/admin/sumbangan");
+  revalidatePath("/sumbang");
+  return { ok: true };
+}
+
 /* ---------------------------------------------------------------- */
 /* Peminjaman: terbooking -> dipinjam                                */
 /* ---------------------------------------------------------------- */
@@ -474,9 +536,49 @@ export async function approvePickup(id: string): Promise<{ ok: true; dueOn: stri
   return { ok: true, dueOn: row.dueOn };
 }
 
+/** Batalkan booking yang belum diambil (mis. anggota mengabarkan tidak jadi datang). Anggota diberi notifikasi. */
+export async function cancelPickup(id: string): Promise<{ ok: true } | Fail> {
+  if (!(await isLibrarian())) return NOT_ALLOWED;
+  if (!z.uuid().safeParse(id).success) return { ok: false, error: "Peminjaman tidak ditemukan." };
+  const done = await db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(loans)
+      .set({ status: "cancelled" })
+      .where(and(eq(loans.id, id), eq(loans.status, "reserved")))
+      .returning({ userId: loans.userId, copyId: loans.copyId });
+    if (!updated) return false;
+    const [book] = await tx
+      .select({ title: books.title, slug: books.slug })
+      .from(bookCopies)
+      .innerJoin(books, eq(books.id, bookCopies.bookId))
+      .where(eq(bookCopies.id, updated.copyId));
+    await notify(
+      {
+        userId: updated.userId,
+        kind: "peminjaman",
+        title: "Booking dibatalkan pustakawan",
+        body: `Booking “${book.title}” dibatalkan oleh pustakawan. Kamu bisa membookingnya lagi dari halaman buku.`,
+        href: `/buku/${book.slug}`,
+      },
+      tx,
+    );
+    return true;
+  });
+  if (!done) {
+    return { ok: false, error: "Booking ini sudah diproses atau dibatalkan. Muat ulang halaman untuk melihat yang terbaru." };
+  }
+  updateTag("catalog");
+  revalidatePath("/admin/peminjaman");
+  revalidatePath("/jadwal");
+  revalidatePath("/profil");
+  revalidatePath("/", "layout");
+  return { ok: true };
+}
+
 /**
- * Terima buku yang pengembaliannya diajukan anggota: status jadi "returned" dengan tanggal hari ini, eksemplar kembali
- * tersedia, dan anggota diberi notifikasi beserta denda akhirnya bila terlambat (dihitung sampai hari buku diterima).
+ * Terima buku di meja sirkulasi: status jadi "returned" dengan tanggal hari ini, eksemplar kembali tersedia, dan anggota
+ * diberi notifikasi beserta denda akhirnya bila terlambat (dihitung sampai hari buku diterima). Tidak harus diajukan
+ * anggota lebih dulu: anggota yang langsung datang membawa buku juga bisa diterima.
  */
 export async function approveReturn(id: string): Promise<{ ok: true; lateDays: number; fine: number } | Fail> {
   if (!(await isLibrarian())) return NOT_ALLOWED;
@@ -486,14 +588,19 @@ export async function approveReturn(id: string): Promise<{ ok: true; lateDays: n
     const [updated] = await tx
       .update(loans)
       .set({ status: "returned", returnedOn: sql`${today}` })
-      .where(and(eq(loans.id, id), eq(loans.status, "active"), isNotNull(loans.returnRequestedAt)))
+      .where(and(eq(loans.id, id), eq(loans.status, "active")))
       .returning({ dueOn: loans.dueOn, returnedOn: loans.returnedOn, userId: loans.userId, copyId: loans.copyId });
     if (!updated) return null;
     const [book] = await tx
-      .select({ title: books.title, slug: books.slug })
+      .select({ id: books.id, title: books.title, slug: books.slug })
       .from(bookCopies)
       .innerJoin(books, eq(books.id, bookCopies.bookId))
       .where(eq(bookCopies.id, updated.copyId));
+    // Buku yang sudah kembali tidak lagi "sedang dibaca" di papan Anggota.
+    await tx
+      .update(profiles)
+      .set({ readingBookId: null })
+      .where(and(eq(profiles.userId, updated.userId), eq(profiles.readingBookId, book.id)));
     const lateDays = overdueDays(Date.parse(updated.dueOn), Date.parse(updated.returnedOn!));
     const fine = fineFor(lateDays);
     await notify(

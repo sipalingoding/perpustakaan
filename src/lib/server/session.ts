@@ -12,6 +12,9 @@ export type Viewer = { id: string; name: string; email: string };
 
 type AuthState = { viewer: Viewer | null; problem: AuthProblem | null };
 
+/** Bagian akun Neon Auth yang dibutuhkan, dari getSession() atau dari isi JWT. */
+export type AuthAccount = { id: string; name: string; email: string; emailVerified: boolean; createdAt: string | Date };
+
 /**
  * Sesi saat ini beserta masalahnya, bila ada. Membaca cookie, jadi hanya boleh dipanggil dari komponen yang
  * dibungkus <Suspense> (aturan Cache Components).
@@ -35,6 +38,14 @@ export const getAuthState = cache(async (): Promise<AuthState> => {
   }
   if (!account) return { viewer: null, problem: null };
 
+  return memberFor(account);
+});
+
+/**
+ * Baris anggota untuk akun Neon Auth, dibuat saat akun pertama kali masuk. Dipakai sesi cookie (getAuthState) dan
+ * token Bearer (src/lib/server/bearer.ts).
+ */
+export async function memberFor(account: AuthAccount): Promise<AuthState> {
   const [member] = await db.select({ name: user.name, email: user.email }).from(user).where(eq(user.id, account.id));
   if (member) return { viewer: { id: account.id, ...member }, problem: null };
 
@@ -60,7 +71,7 @@ export const getAuthState = cache(async (): Promise<AuthState> => {
     return { viewer: null, problem: "akun-bentrok" };
   }
   return { viewer: { id: account.id, ...created }, problem: null };
-});
+}
 
 /** Anggota yang sedang masuk, atau null untuk tamu (dan untuk sesi yang bermasalah, lihat getAuthState). */
 export async function getViewer(): Promise<Viewer | null> {
@@ -80,10 +91,13 @@ export async function requireViewer(next?: string): Promise<Viewer> {
 /** Peran anggota yang sedang masuk; tamu dianggap "anggota". */
 export const getRole = cache(async (): Promise<"anggota" | "pustakawan"> => {
   const viewer = await getViewer();
-  if (!viewer) return "anggota";
-  const [row] = await db.select({ role: profiles.role }).from(profiles).where(eq(profiles.userId, viewer.id));
-  return row?.role ?? "anggota";
+  return viewer ? roleOf(viewer.id) : "anggota";
 });
+
+export async function roleOf(userId: string): Promise<"anggota" | "pustakawan"> {
+  const [row] = await db.select({ role: profiles.role }).from(profiles).where(eq(profiles.userId, userId));
+  return row?.role ?? "anggota";
+}
 
 /** Untuk halaman dan aksi khusus pustakawan. Selain pustakawan melihat 404, supaya keberadaan /admin tidak terbaca. */
 export async function requireLibrarian(next = "/admin"): Promise<Viewer> {

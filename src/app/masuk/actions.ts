@@ -1,10 +1,12 @@
 "use server";
 
 import { eq } from "drizzle-orm";
+import { headers } from "next/headers";
 import { db } from "@/db";
-import { profiles, user } from "@/db/schema";
-import { formatMemberNo } from "@/lib/member";
+import { profiles } from "@/db/schema";
 import { auth } from "@/lib/server/auth";
+import { clearLoginFailures, clientIp, LOGIN_BLOCKED, loginBlocked, recordLoginFailure } from "@/lib/server/login-throttle";
+import { emailForMemberNo, parseMemberNo } from "@/lib/server/member-no";
 import { getProfile } from "@/lib/server/members";
 import { getRole, getViewer } from "@/lib/server/session";
 
@@ -34,15 +36,6 @@ export async function finishSignUp(gender: string): Promise<void> {
     .where(eq(profiles.userId, viewer.id));
 }
 
-/** "lmb 2610 0007", "LMB-2610-0007", atau "LMB26100007" -> { yymm: "2610", no: 7 } */
-function parseMemberNo(input: string) {
-  const m = input
-    .toUpperCase()
-    .replace(/[\s.]/g, "")
-    .match(/^LMB-?(\d{4})-?(\d{1,6})$/);
-  return m ? { yymm: m[1], no: Number(m[2]) } : null;
-}
-
 export type MemberSignInResult = { ok: true } | { ok: false; error: string };
 
 const MEMBER_MISMATCH = "Nomor anggota atau kata sandi belum cocok. Periksa lagi, ya.";
@@ -61,25 +54,26 @@ export async function signInWithMemberNo(
   if (!parsed) return { ok: false, error: "Tulis nomor anggota seperti di kartumu, mis. LMB-2610-0007." };
   if (typeof password !== "string" || password.length === 0) return { ok: false, error: "Isi kata sandimu." };
 
-  const [member] = await db
-    .select({ email: user.email, createdAt: user.createdAt })
-    .from(profiles)
-    .innerJoin(user, eq(user.id, profiles.userId))
-    .where(eq(profiles.memberNo, parsed.no));
-  if (
-    !member ||
-    formatMemberNo(member.createdAt, parsed.no) !== `LMB-${parsed.yymm}-${String(parsed.no).padStart(4, "0")}`
-  ) {
+  const email = await emailForMemberNo(parsed);
+  // Nomor yang tidak ada tetap dihitung sebagai percobaan gagal, supaya nomor anggota tidak bisa dipindai.
+  const keys = { ip: clientIp(await headers()), account: email ?? `nomor:${parsed.no}` };
+  if (await loginBlocked(keys)) return { ok: false, error: LOGIN_BLOCKED };
+  if (!email) {
+    await recordLoginFailure(keys);
     return { ok: false, error: MEMBER_MISMATCH };
   }
 
   try {
-    const { error } = await auth.signIn.email({ email: member.email, password, rememberMe: remember });
-    if (!error) return { ok: true };
+    const { error } = await auth.signIn.email({ email, password, rememberMe: remember });
+    if (!error) {
+      await clearLoginFailures(email);
+      return { ok: true };
+    }
     const { code, status } = error as { code?: string; status?: number };
     if (status === 429 || code === "over_request_rate_limit") {
       return { ok: false, error: "Terlalu banyak percobaan. Tunggu sebentar lalu coba lagi." };
     }
+    await recordLoginFailure(keys);
     return { ok: false, error: MEMBER_MISMATCH };
   } catch (e) {
     console.warn("[masuk] Neon Auth tidak bisa dihubungi:", e instanceof Error ? e.message : e);

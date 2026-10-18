@@ -186,6 +186,9 @@ const ERRORS: Record<string, string> = {
   USER_ALREADY_EXISTS: MESSAGES.exists,
   USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL: MESSAGES.exists,
   over_request_rate_limit: MESSAGES.rate,
+  // Batas percobaan gagal dari /api/auth (src/lib/server/login-throttle.ts, 15 menit).
+  TOO_MANY_ATTEMPTS:
+    "Terlalu banyak percobaan masuk yang gagal. Tunggu 15 menit lalu coba lagi.",
 };
 const FALLBACK_ERROR = "Belum berhasil. Coba lagi sebentar lagi.";
 
@@ -438,12 +441,21 @@ function SignInForm() {
 
 function SignUpForm() {
   const { pending, onSubmit } = useAuthForm(
-    (data) =>
-      authClient.signUp.email({
-        name: String(data.get("nama")).trim(),
+    async (data): Promise<AuthResponse> => {
+      const name = String(data.get("nama")).trim().replace(/\s+/g, " ");
+      // Aturan yang sama dengan Profil, supaya nama dari pendaftaran tidak menghalangi menyimpan profil nanti.
+      if (name.length < 2 || name.length > 80) {
+        return {
+          error: null,
+          message: "Nama lengkap terdiri dari 2 sampai 80 huruf.",
+        };
+      }
+      return authClient.signUp.email({
+        name,
         email: String(data.get("email")).trim(),
         password: String(data.get("password")),
-      }),
+      });
+    },
     "Kartu anggotamu sudah jadi. Selamat datang di Lembar!",
     // Neon Auth hanya menyimpan akun; jenis kelamin disimpan di profil anggota setelah akun jadi.
     (data) => finishSignUp(String(data.get("gender"))),
@@ -464,6 +476,8 @@ function SignUpForm() {
         type="text"
         placeholder="Nama sesuai identitas"
         autoComplete="name"
+        minLength={2}
+        maxLength={80}
         required
       />
       <Field

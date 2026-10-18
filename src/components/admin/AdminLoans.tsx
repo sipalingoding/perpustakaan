@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
-import { approvePickup, approveReturn } from "@/app/admin/actions";
+import { approvePickup, approveReturn, cancelPickup } from "@/app/admin/actions";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { MemberPhone } from "@/components/admin/MemberPhone";
 import { Check, ReturnBook, Spinner } from "@/components/icons";
 import { ui } from "@/components/ui";
@@ -39,12 +40,17 @@ type Row = AdminLoan & { returned?: boolean };
  * Peminjaman yang berjalan. Booking anggota berstatus "terbooking"; saat anggota datang dan menerima bukunya,
  * pustakawan menekan Approve sehingga statusnya jadi "dipinjam" dan masa pinjam mulai dihitung hari itu.
  * Anggota yang mengembalikan buku mengajukannya dari Jadwal; pustakawan menekan "Terima pengembalian" setelah bukunya
- * benar-benar di meja sirkulasi, baru statusnya jadi dikembalikan dan eksemplarnya tersedia lagi.
+ * benar-benar di meja sirkulasi, baru statusnya jadi dikembalikan dan eksemplarnya tersedia lagi. Anggota yang langsung
+ * datang membawa buku tanpa mengajukan juga bisa diterima ("Terima buku"), dan booking bisa dibatalkan.
  */
 export function AdminLoans({ loans }: { loans: AdminLoan[] }) {
   const router = useRouter();
   const [rows, setRows] = useState<Row[]>(loans);
+  /** Pengembalian yang sudah diajukan anggota (saringan "Pengembalian"). */
   const isReturn = (l: Row) => l.status === "active" && l.returnRequestedOn !== null && !l.returned;
+  /** Semua buku yang sedang dipinjam bisa diterima, diajukan atau tidak. */
+  const canReceive = (l: Row) => l.status === "active" && !l.returned;
+  const [cancelling, setCancelling] = useState<Row | null>(null);
   const counts = {
     kembali: rows.filter(isReturn).length,
     reserved: rows.filter((l) => l.status === "reserved").length,
@@ -99,7 +105,7 @@ export function AdminLoans({ loans }: { loans: AdminLoan[] }) {
   };
 
   const receive = async (l: Row) => {
-    if (!isReturn(l) || inFlight.current.has(l.id)) return;
+    if (!canReceive(l) || inFlight.current.has(l.id)) return;
     inFlight.current.add(l.id);
     setBusyId(l.id);
     setNotice(null);
@@ -127,14 +133,38 @@ export function AdminLoans({ loans }: { loans: AdminLoan[] }) {
     }
   };
 
+  const cancel = async (l: Row) => {
+    if (l.status !== "reserved" || inFlight.current.has(l.id)) return;
+    inFlight.current.add(l.id);
+    setBusyId(l.id);
+    setNotice(null);
+    try {
+      const result = await cancelPickup(l.id);
+      if (!result.ok) {
+        setNotice({ kind: "error", text: `“${l.title}” (${l.memberName}): ${result.error}` });
+        return;
+      }
+      setRows((all) => all.filter((r) => r.id !== l.id));
+      setNotice({ kind: "ok", text: `Booking “${l.title}” untuk ${l.memberName} dibatalkan. Anggota sudah diberi kabar.` });
+      router.refresh();
+    } catch {
+      setNotice({ kind: "error", text: `Booking “${l.title}” gagal dibatalkan. Periksa koneksi lalu coba lagi.` });
+    } finally {
+      inFlight.current.delete(l.id);
+      setBusyId(null);
+      setCancelling(null);
+    }
+  };
+
   return (
     <div className={cn(ui.wrap, "pt-6")}>
       <h1 className="display m-0 text-[clamp(44px,5.6vw,68px)] leading-none">Peminjaman</h1>
       <p className="mt-3 mb-0 max-w-[60ch] text-[15px] leading-relaxed text-ink-3">
         Saat anggota datang mengambil buku yang dibookingnya, periksa kartu anggotanya lalu tekan{" "}
         <strong className="text-ink-2">Approve</strong>. Status buku jadi dipinjam dan masa pinjam mulai dihitung hari
-        ini. Saat anggota menyerahkan buku yang pengembaliannya sudah diajukan, periksa bukunya lalu tekan{" "}
-        <strong className="text-ink-2">Terima pengembalian</strong>.
+        ini. Saat anggota menyerahkan buku, periksa bukunya lalu tekan{" "}
+        <strong className="text-ink-2">Terima pengembalian</strong> (sudah diajukan dari aplikasi) atau{" "}
+        <strong className="text-ink-2">Terima buku</strong> (langsung dibawa ke meja).
       </p>
 
       <div className="mt-6 flex flex-wrap gap-2" role="group" aria-label="Saring menurut status">
@@ -239,29 +269,40 @@ export function AdminLoans({ loans }: { loans: AdminLoan[] }) {
                   </td>
                   <td className="py-3.5 pr-5 pl-3 text-right whitespace-nowrap">
                     {reserved && (
-                      <button
-                        type="button"
-                        onClick={() => approve(l)}
-                        disabled={busy}
-                        aria-busy={busy}
-                        aria-label={`Approve: ${l.title} diambil ${l.memberName}`}
-                        className={cn(ui.btn, ui.primary, "min-h-11 px-4 text-sm disabled:cursor-wait")}
-                      >
-                        {busy ? <Spinner size={18} /> : <Check size={18} />}
-                        Approve
-                      </button>
+                      <span className="inline-flex flex-wrap justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setCancelling(l)}
+                          disabled={busy}
+                          aria-label={`Batalkan booking: ${l.title} untuk ${l.memberName}`}
+                          className={cn(ui.btn, ui.ghost, "min-h-11 px-4 text-sm disabled:cursor-wait")}
+                        >
+                          Batalkan
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => approve(l)}
+                          disabled={busy}
+                          aria-busy={busy}
+                          aria-label={`Approve: ${l.title} diambil ${l.memberName}`}
+                          className={cn(ui.btn, ui.primary, "min-h-11 px-4 text-sm disabled:cursor-wait")}
+                        >
+                          {busy ? <Spinner size={18} /> : <Check size={18} />}
+                          Approve
+                        </button>
+                      </span>
                     )}
-                    {isReturn(l) && (
+                    {canReceive(l) && (
                       <button
                         type="button"
                         onClick={() => receive(l)}
                         disabled={busy}
                         aria-busy={busy}
-                        aria-label={`Terima pengembalian: ${l.title} dari ${l.memberName}`}
-                        className={cn(ui.btn, ui.primary, "min-h-11 px-4 text-sm disabled:cursor-wait")}
+                        aria-label={`${isReturn(l) ? "Terima pengembalian" : "Terima buku"}: ${l.title} dari ${l.memberName}`}
+                        className={cn(ui.btn, isReturn(l) ? ui.primary : ui.ghost, "min-h-11 px-4 text-sm disabled:cursor-wait")}
                       >
                         {busy ? <Spinner size={18} /> : <ReturnBook size={18} />}
-                        Terima pengembalian
+                        {isReturn(l) ? "Terima pengembalian" : "Terima buku"}
                       </button>
                     )}
                   </td>
@@ -272,6 +313,19 @@ export function AdminLoans({ loans }: { loans: AdminLoan[] }) {
         </table>
         {shown.length === 0 && <p className="m-0 px-5 py-8 text-center text-[15px] text-ink-3">{EMPTY[filter]}</p>}
       </div>
+
+      {cancelling && (
+        <ConfirmDialog
+          title={`Batalkan booking “${cancelling.title}”?`}
+          confirmLabel="Ya, batalkan"
+          busy={busyId === cancelling.id}
+          onConfirm={() => cancel(cancelling)}
+          onCancel={() => setCancelling(null)}
+        >
+          Booking {cancelling.memberName} dibatalkan dan eksemplar {cancelling.copyCode} terbuka lagi untuk anggota lain.
+          Anggota diberi kabar lewat notifikasi.
+        </ConfirmDialog>
+      )}
     </div>
   );
 }

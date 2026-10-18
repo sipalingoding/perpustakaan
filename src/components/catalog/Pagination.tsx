@@ -2,7 +2,7 @@ import { ChevronLeft, ChevronRight } from "@/components/icons";
 import { cn } from "@/lib/cn";
 
 const item =
-  "inline-flex size-11 cursor-pointer items-center justify-center rounded-full border-[1.5px] border-transparent bg-transparent text-sm font-semibold text-ink-2 tabular-nums transition-colors hover:border-primary-400 hover:bg-tint disabled:cursor-default disabled:opacity-35 disabled:hover:border-transparent disabled:hover:bg-transparent";
+  "inline-flex cursor-pointer items-center justify-center rounded-full border-[1.5px] border-transparent bg-transparent font-semibold text-ink-2 tabular-nums transition-colors hover:border-primary-400 hover:bg-tint disabled:cursor-default disabled:opacity-35 disabled:hover:border-transparent disabled:hover:bg-transparent";
 
 /** Nomor halaman yang ditampilkan: pertama, terakhir, dan tetangga halaman aktif; celahnya jadi "…". */
 function pageList(current: number, total: number): Array<number | "…"> {
@@ -19,36 +19,47 @@ function pageList(current: number, total: number): Array<number | "…"> {
   return out;
 }
 
-/** Navigasi halaman katalog: sebelumnya, nomor halaman, berikutnya. */
+/** Navigasi halaman (katalog, tabel admin): sebelumnya, nomor halaman, berikutnya. */
 export function Pagination({
   page,
   total,
   onChange,
   className,
+  label = "Halaman katalog",
+  align = "center",
+  size = "md",
 }: {
   page: number;
   total: number;
   onChange: (page: number) => void;
   className?: string;
+  /** Nama navigasi untuk pembaca layar. */
+  label?: string;
+  align?: "center" | "end";
+  /** "sm" untuk tabel admin: tombol 36 px, lebih ringkas dari katalog (44 px). */
+  size?: "md" | "sm";
 }) {
   if (total <= 1) return null;
+  const justify = align === "end" ? "justify-end" : "justify-center";
+  const box = size === "sm" ? "size-9 text-[13px]" : "size-11 text-sm";
+  const icon = size === "sm" ? 18 : 22;
   return (
-    <nav aria-label="Halaman katalog" className={cn("flex justify-center", className)}>
-      <ul className="m-0 flex list-none flex-wrap items-center justify-center gap-1 p-0">
+    <nav aria-label={label} className={cn("flex", justify, className)}>
+      <ul className={cn("m-0 flex list-none flex-wrap items-center gap-1 p-0", justify)}>
         <li>
           <button
             type="button"
-            className={item}
+            className={cn(item, box)}
             onClick={() => onChange(page - 1)}
             disabled={page === 1}
             aria-label="Halaman sebelumnya"
           >
-            <ChevronLeft size={22} />
+            <ChevronLeft size={icon} />
           </button>
         </li>
         {pageList(page, total).map((p, i) =>
           p === "…" ? (
-            <li key={`gap-${i}`} aria-hidden="true" className="inline-flex w-6 justify-center text-sm text-muted">
+            <li key={`gap-${i}`} aria-hidden="true" className="inline-flex w-5 justify-center text-[13px] text-muted">
               …
             </li>
           ) : (
@@ -57,6 +68,7 @@ export function Pagination({
                 type="button"
                 className={cn(
                   item,
+                  box,
                   "aria-[current=page]:border-ink aria-[current=page]:bg-ink aria-[current=page]:text-cream aria-[current=page]:hover:bg-ink",
                 )}
                 onClick={() => onChange(p)}
@@ -71,12 +83,12 @@ export function Pagination({
         <li>
           <button
             type="button"
-            className={item}
+            className={cn(item, box)}
             onClick={() => onChange(page + 1)}
             disabled={page === total}
             aria-label="Halaman berikutnya"
           >
-            <ChevronRight size={22} />
+            <ChevronRight size={icon} />
           </button>
         </li>
       </ul>

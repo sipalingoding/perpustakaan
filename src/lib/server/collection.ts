@@ -24,9 +24,17 @@ export function slugify(title: string) {
   );
 }
 
+/**
+ * Kunci sampai transaksi selesai, supaya dua penyimpanan bersamaan tidak memilih slug atau kode eksemplar yang sama
+ * (keduanya dibaca dulu baru disisipkan).
+ */
+const lock = (tx: Tx, key: string) => tx.execute(sql`select pg_advisory_xact_lock(hashtext(${key}))`);
+
 /** Slug yang belum dipakai buku lain: "judul", lalu "judul-2", "judul-3", … */
 export async function uniqueSlug(tx: Tx, title: string) {
   const base = slugify(title);
+  // Satu kunci untuk semua slug: "judul-2" bisa jadi slug buku "Judul" maupun buku berjudul "Judul 2".
+  await lock(tx, "slug");
   const taken = new Set(
     (await tx.select({ slug: books.slug }).from(books).where(like(books.slug, `${base}%`))).map((r) => r.slug),
   );
@@ -38,6 +46,7 @@ export async function uniqueSlug(tx: Tx, title: string) {
 /** Tambah `count` eksemplar dengan kode `<rak>-<nomor>` yang belum terpakai. */
 export async function addCopies(tx: Tx, bookId: string, shelf: string, count: number) {
   if (count <= 0) return;
+  await lock(tx, `copies:${shelf}`);
   const used = new Set(
     (await tx.select({ code: bookCopies.code }).from(bookCopies).where(like(bookCopies.code, `${shelf}-%`))).map((r) => r.code),
   );

@@ -2,7 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
-import { advanceDonation } from "@/app/admin/actions";
+import { advanceDonation, rejectDonation } from "@/app/admin/actions";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { MemberPhone } from "@/components/admin/MemberPhone";
 import { Check, Parcel, Spinner } from "@/components/icons";
 import { ui } from "@/components/ui";
@@ -12,12 +13,13 @@ import { formatHour } from "@/lib/library";
 import type { AdminDonation, DonationStatus } from "@/lib/server/admin-donations";
 import { useToast } from "@/components/Toast";
 
-type Filter = "diajukan" | "dikirim" | "diterima" | "semua";
+type Filter = "diajukan" | "dikirim" | "diterima" | "ditolak" | "semua";
 
 const FILTERS: Array<{ key: Filter; label: string }> = [
   { key: "diajukan", label: "Perlu disetujui" },
   { key: "dikirim", label: "Dalam pengiriman" },
   { key: "diterima", label: "Diterima" },
+  { key: "ditolak", label: "Ditolak" },
   { key: "semua", label: "Semua" },
 ];
 
@@ -28,12 +30,13 @@ const STATUS: Record<DonationStatus, { label: string; className: string }> = {
   ditolak: { label: "Ditolak", className: "bg-ground-2 text-ink-3" },
 };
 
-const CONDITION = { baru: "Baru", sangat: "Sangat baik", baik: "Baik" } as const;
+const CONDITION = { baru: "Baru", baik: "Baik", kurang: "Kurang baik" } as const;
 
 const EMPTY: Record<Filter, string> = {
   diajukan: "Tidak ada sumbangan yang menunggu persetujuan.",
   dikirim: "Tidak ada sumbangan yang sedang dalam pengiriman.",
   diterima: "Belum ada sumbangan yang diterima.",
+  ditolak: "Belum ada sumbangan yang ditolak.",
   semua: "Belum ada sumbangan.",
 };
 
@@ -42,6 +45,7 @@ const day = (iso: string) => formatShort(Date.parse(iso));
 /**
  * Sumbangan dari anggota. Pustakawan menyetujui formulir (status jadi "dalam pengiriman": anggota mengantar atau
  * petugas menjemput), lalu menekan "Konfirmasi diterima" setelah bukunya benar-benar di tangan (status jadi "diterima").
+ * Sumbangan yang belum diterima bisa ditolak (mis. buku rusak), dengan alasan yang dikirim ke penyumbang.
  */
 export function AdminDonations({ donations }: { donations: AdminDonation[] }) {
   const router = useRouter();
@@ -50,6 +54,7 @@ export function AdminDonations({ donations }: { donations: AdminDonation[] }) {
     diajukan: rows.filter((d) => d.status === "diajukan").length,
     dikirim: rows.filter((d) => d.status === "dikirim").length,
     diterima: rows.filter((d) => d.status === "diterima").length,
+    ditolak: rows.filter((d) => d.status === "ditolak").length,
     semua: rows.length,
   };
   const [filter, setFilter] = useState<Filter>(counts.diajukan > 0 ? "diajukan" : counts.dikirim > 0 ? "dikirim" : "semua");
@@ -57,6 +62,8 @@ export function AdminDonations({ donations }: { donations: AdminDonation[] }) {
   // Klik kedua sebelum tombol sempat nonaktif (klik ganda) diabaikan, supaya tidak menimpa pesan klik pertama.
   const inFlight = useRef(new Set<string>());
   const setNotice = useToast();
+  const [rejecting, setRejecting] = useState<AdminDonation | null>(null);
+  const [reason, setReason] = useState("");
 
   // Baris yang baru diproses tetap terlihat di saringan ini (dengan status dan tombol berikutnya) sampai saringan diganti,
   // supaya pustakawan tidak kehilangan jejak sumbangan yang baru disetujui.
@@ -99,6 +106,31 @@ export function AdminDonations({ donations }: { donations: AdminDonation[] }) {
       router.refresh();
     } catch {
       setNotice({ kind: "error", text: `${d.code} gagal diperbarui. Periksa koneksi lalu coba lagi.` });
+    } finally {
+      inFlight.current.delete(d.id);
+      setBusyId(null);
+    }
+  };
+
+  const reject = async (d: AdminDonation) => {
+    if ((d.status !== "diajukan" && d.status !== "dikirim") || inFlight.current.has(d.id)) return;
+    inFlight.current.add(d.id);
+    setBusyId(d.id);
+    setNotice(null);
+    try {
+      const result = await rejectDonation(d.id, d.status, reason);
+      if (!result.ok) {
+        setNotice({ kind: "error", text: `${d.code}: ${result.error}` });
+        return;
+      }
+      setRows((all) => all.map((r) => (r.id === d.id ? { ...r, status: "ditolak" } : r)));
+      setKept((ids) => new Set(ids).add(d.id));
+      setNotice({ kind: "ok", text: `${d.code} ditolak. Penyumbang sudah diberi kabar.` });
+      setRejecting(null);
+      setReason("");
+      router.refresh();
+    } catch {
+      setNotice({ kind: "error", text: `${d.code} gagal ditolak. Periksa koneksi lalu coba lagi.` });
     } finally {
       inFlight.current.delete(d.id);
       setBusyId(null);
@@ -185,6 +217,19 @@ export function AdminDonations({ donations }: { donations: AdminDonation[] }) {
                   </td>
                   <td className="py-3.5 pr-5 pl-3 text-right whitespace-nowrap">
                     {d.status === "diajukan" || d.status === "dikirim" ? (
+                      <span className="inline-flex flex-wrap justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setReason("");
+                          setRejecting(d);
+                        }}
+                        disabled={busy}
+                        aria-label={`Tolak ${d.title} (${d.code})`}
+                        className={cn(ui.btn, ui.ghost, "min-h-11 px-4 text-sm disabled:cursor-wait")}
+                      >
+                        Tolak
+                      </button>
                       <button
                         type="button"
                         onClick={() => advance(d)}
@@ -200,6 +245,7 @@ export function AdminDonations({ donations }: { donations: AdminDonation[] }) {
                         {busy ? <Spinner size={18} /> : <Check size={18} />}
                         {d.status === "diajukan" ? "Setujui" : "Konfirmasi diterima"}
                       </button>
+                      </span>
                     ) : null}
                   </td>
                 </tr>
@@ -209,6 +255,32 @@ export function AdminDonations({ donations }: { donations: AdminDonation[] }) {
         </table>
         {shown.length === 0 && <p className="m-0 px-5 py-8 text-center text-[15px] text-ink-3">{EMPTY[filter]}</p>}
       </div>
+
+      {rejecting && (
+        <ConfirmDialog
+          title={`Tolak sumbangan “${rejecting.title}”?`}
+          confirmLabel="Ya, tolak"
+          busy={busyId === rejecting.id}
+          onConfirm={() => reject(rejecting)}
+          onCancel={() => setRejecting(null)}
+        >
+          <span className="flex flex-col gap-2">
+            <span>{rejecting.code} ditandai ditolak dan penyumbang diberi kabar lewat notifikasi.</span>
+            <label htmlFor="alasan-tolak" className={ui.label}>
+              Alasan untuk penyumbang (boleh kosong)
+            </label>
+            <textarea
+              id="alasan-tolak"
+              value={reason}
+              maxLength={200}
+              rows={3}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="Mis. halaman banyak yang sobek."
+              className={cn(ui.field, "py-3")}
+            />
+          </span>
+        </ConfirmDialog>
+      )}
     </div>
   );
 }

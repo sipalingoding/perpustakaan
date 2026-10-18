@@ -52,7 +52,10 @@ export function BorrowPanel({
 
   const submit = () => {
     startTransition(async () => {
-      const result = await borrowBook({ slug: book.slug, pickupOn: dates[pick], pickupHour: hour, days });
+      const result = await borrowBook({ slug: book.slug, pickupOn: dates[pick], pickupHour: hour, days }).catch(() => ({
+        ok: false as const,
+        error: "Peminjaman gagal dikirim. Periksa koneksi lalu coba lagi.",
+      }));
       notify(
         result.ok
           ? {
@@ -94,7 +97,7 @@ export function BorrowPanel({
               </>
             ) : (
               <>
-                Buku ini sedang kamu pinjam. Kembalikan ke meja sirkulasi sebelum{" "}
+                Buku ini sedang kamu pinjam. Kembalikan ke meja sirkulasi paling lambat{" "}
                 <strong>{formatDay(Date.parse(mine.dueOn))}</strong>.
               </>
             )}

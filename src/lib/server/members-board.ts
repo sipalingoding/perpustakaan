@@ -13,7 +13,7 @@ const asShelfBook = (b: { title: string; coverBg: string; coverInk: string; slug
   slug: b.slug,
 });
 
-/** Papan baca: semua anggota dengan jumlah pinjaman per periode dan rak koleksinya. */
+/** Papan baca: semua anggota (tanpa pustakawan) dengan jumlah pinjaman per periode dan rak koleksinya. */
 export async function getMemberBoard() {
   const [people, counts, shelves, today] = await Promise.all([
     db
@@ -35,7 +35,9 @@ export async function getMemberBoard() {
       })
       .from(profiles)
       .innerJoin(user, eq(user.id, profiles.userId))
-      .leftJoin(books, eq(books.id, profiles.readingBookId)),
+      .leftJoin(books, eq(books.id, profiles.readingBookId))
+      // Papan baca untuk anggota; akun pustakawan bukan peserta.
+      .where(eq(profiles.role, "anggota")),
     // Yang dihitung: pinjaman yang sudah diambil (aktif atau sudah dikembalikan), menurut tanggal ambil.
     db.execute<{ user_id: string; bulan: number; tahun: number; semua: number }>(sql`
       with d as (select (now() at time zone ${LIBRARY_TZ})::date as today)

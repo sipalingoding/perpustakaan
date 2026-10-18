@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRef, useState, useTransition, type ChangeEvent, type ComponentProps } from "react";
 import { removePhoto, saveAccount, saveGender, saveLook, savePhoto, savePreferences, selectPhoto } from "@/app/profil/actions";
 import { Avatar } from "@/components/Avatar";
+import { BookCover } from "@/components/catalog/BookCover";
 import { ArrowRight, Camera, Check, Pencil, Spinner, Trash } from "@/components/icons";
 import { LeaningBook } from "@/components/illustrations/LeaningBook";
 import { ReaderArmchair } from "@/components/illustrations/ReaderArmchair";
@@ -95,7 +96,10 @@ export function ProfileClient({ data, categories }: { data: ProfileData; categor
   /** Simpan perubahan ke server; kalau gagal, kembalikan tampilan ke nilai sebelumnya. */
   const persist = (save: () => Promise<{ ok: true } | { ok: false; error: string }>, revert?: () => void) =>
     startTransition(async () => {
-      const result = await save();
+      const result = await save().catch(() => ({
+        ok: false as const,
+        error: "Perubahan gagal disimpan. Periksa koneksi lalu coba lagi.",
+      }));
       if (result.ok) return notify({ kind: "ok", text: "Perubahan tersimpan." });
       revert?.();
       notify({ kind: "error", text: result.error });
@@ -274,7 +278,7 @@ export function ProfileClient({ data, categories }: { data: ProfileData; categor
                 key={s.id}
                 type="button"
                 className={cn("spine cursor-pointer border-0", s.status === "reserved" && "striped")}
-                style={{ height: s.height, backgroundColor: s.coverBg, color: s.coverInk }}
+                style={{ height: s.height, backgroundColor: s.cover.bg, color: s.cover.ink }}
                 aria-pressed={i === selected}
                 aria-label={`${s.title}, ${KIND[s.status].status.toLowerCase()}`}
                 onClick={() => setSelected(i)}
@@ -295,11 +299,9 @@ export function ProfileClient({ data, categories }: { data: ProfileData; categor
           aria-live="polite"
           className={cn(ui.card, "flex animate-pop flex-wrap items-center gap-x-[22px] gap-y-[18px]")}
         >
-          <span
-            aria-hidden="true"
-            className="spine-shade h-[74px] w-[52px] shrink-0 rounded-[3px_8px_8px_3px] shadow-[0_10px_16px_-10px_rgba(29,43,40,.6)]"
-            style={{ backgroundColor: pick.coverBg }}
-          />
+          <span className="@container relative aspect-[2/3] w-16 shrink-0 overflow-hidden rounded-[3px_8px_8px_3px] shadow-[0_10px_16px_-10px_rgba(29,43,40,.6)]">
+            <BookCover cover={pick.cover} className="rounded-[inherit]" />
+          </span>
           <div className="flex min-w-0 flex-[1_1_280px] flex-col gap-1.5">
             <span className={cn("status", KIND[pick.status].className)}>{KIND[pick.status].status}</span>
             <h3 className="m-0 text-lg leading-snug font-bold">{pick.title}</h3>

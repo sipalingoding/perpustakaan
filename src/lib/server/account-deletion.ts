@@ -1,9 +1,11 @@
 import "server-only";
 import { verifyPassword } from "@better-auth/utils/password";
 import { and, eq, sql } from "drizzle-orm";
+import { headers } from "next/headers";
 import { db } from "@/db";
 import { loans, profiles, user } from "@/db/schema";
 import { holdsCopy } from "@/lib/server/loans";
+import { clientIp, LOGIN_BLOCKED, loginBlocked, recordLoginFailure } from "@/lib/server/login-throttle";
 import { deleteFile } from "@/lib/server/storage";
 
 export type DeleteAccountResult = { ok: true } | { ok: false; error: string };
@@ -31,14 +33,18 @@ export async function deleteMemberAccount(userId: string, password: string): Pro
     .where(and(eq(loans.userId, userId), holdsCopy))
     .limit(1);
   if (open) {
-    return { ok: false, error: "Masih ada buku yang kamu pinjam atau booking. Kembalikan atau batalkan dulu, lalu coba lagi." };
+    return { ok: false, error: "Masih ada buku yang kamu pinjam atau booking. Kembalikan bukunya, atau batalkan booking-nya di Jadwal saya, lalu coba lagi." };
   }
 
   const { rows } = await db.execute<{ password: string | null }>(
     sql`select password from neon_auth.account where "userId"::text = ${userId} and "providerId" = 'credential'`,
   );
   const hash = rows[0]?.password;
+  // Sesi yang tertinggal di perangkat orang lain tidak boleh dipakai menebak kata sandi lewat formulir ini.
+  const keys = { ip: clientIp(await headers()), account: `hapus:${userId}` };
+  if (await loginBlocked(keys)) return { ok: false, error: LOGIN_BLOCKED };
   if (!hash || !(await verifyPassword(hash, password).catch(() => false))) {
+    await recordLoginFailure(keys);
     return { ok: false, error: "Kata sandinya belum cocok. Periksa lagi, ya." };
   }
 

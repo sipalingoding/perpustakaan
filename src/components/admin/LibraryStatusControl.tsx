@@ -21,7 +21,10 @@ export function LibraryStatusControl({ status, now: initialNow }: { status: Libr
 
   const save = (next: boolean) =>
     startTransition(async () => {
-      const result = await setLibraryClosed(next, next ? note : "");
+      const result = await setLibraryClosed(next, next ? note : "").catch(() => ({
+        ok: false as const,
+        error: "Status perpustakaan gagal disimpan. Periksa koneksi lalu coba lagi.",
+      }));
       if (!result.ok) {
         notify({ kind: "error", text: result.error });
         return;

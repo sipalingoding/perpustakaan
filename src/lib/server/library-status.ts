@@ -17,3 +17,13 @@ export async function getLibraryStatus(): Promise<{ status: LibraryStatus; now: 
   const r = rows[0];
   return { status: { closed: r?.closed ?? false, note: r?.note ?? "" }, now: Number(r?.now ?? 0) };
 }
+
+/**
+ * Pesan penolakan bila perpustakaan sedang ditutup manual, untuk booking dan jadwal sumbangan: anggota tidak boleh
+ * diberi jadwal datang selama perpustakaan tutup. null = sedang tidak ditutup.
+ */
+export async function closedError(what: string): Promise<string | null> {
+  const { status } = await getLibraryStatus();
+  if (!status.closed) return null;
+  return `Perpustakaan sedang ditutup${status.note ? ` (${status.note})` : ""}, jadi ${what} belum bisa dibuat. Coba lagi setelah perpustakaan buka.`;
+}

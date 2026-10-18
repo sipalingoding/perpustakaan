@@ -52,7 +52,7 @@ export async function saveCategory(input: CategoryInput): Promise<{ ok: true; na
   const { original, name, coverBg } = parsed.data;
   const values = { name, coverBg: coverBg.toUpperCase(), coverInk: readableInk(coverBg) };
 
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx): Promise<{ ok: true; name: string } | Fail> => {
     // Beda huruf besar-kecil saja dianggap sama, supaya tidak ada "Fiksi" dan "fiksi" berdampingan.
     const [taken] = await tx
       .select({ name: categories.name })
@@ -76,7 +76,6 @@ export async function saveCategory(input: CategoryInput): Promise<{ ok: true; na
         .select({ next: sql<number>`coalesce(max(${categories.position}), -1)::int + 1` })
         .from(categories);
       await tx.insert(categories).values({ ...values, position: next });
-      refresh();
       return { ok: true, name } as const;
     }
 
@@ -93,9 +92,11 @@ export async function saveCategory(input: CategoryInput): Promise<{ ok: true; na
         .set({ favCategories: sql`array_replace(${profiles.favCategories}, ${original}, ${name})` })
         .where(sql`${original} = any(${profiles.favCategories})`);
     }
-    refresh();
     return { ok: true, name } as const;
   });
+  // Cache dibuang setelah transaksi selesai: kalau di dalamnya, render yang berjalan bersamaan bisa menyimpan data lama lagi.
+  if (result.ok) refresh();
+  return result;
 }
 
 /** Geser kategori satu langkah ke atas (-1) atau ke bawah (1) dalam urutan tampil. */
@@ -134,7 +135,7 @@ export async function deleteCategory(
 ): Promise<{ ok: true; moved: number } | Fail> {
   if (!(await isLibrarian())) return NOT_ALLOWED;
 
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx): Promise<{ ok: true; moved: number } | Fail> => {
     const all = await tx.select({ name: categories.name }).from(categories).for("update");
     if (!all.some((c) => c.name === name)) {
       return { ok: false, error: "Kategori ini sudah dihapus. Muat ulang halaman." } satisfies Fail;
@@ -177,7 +178,8 @@ export async function deleteCategory(
       .set({ favCategories: sql`array_remove(${profiles.favCategories}, ${name})` })
       .where(sql`${name} = any(${profiles.favCategories})`);
     await tx.delete(categories).where(eq(categories.name, name));
-    refresh();
     return { ok: true, moved: bookCount } as const;
   });
+  if (result.ok) refresh();
+  return result;
 }

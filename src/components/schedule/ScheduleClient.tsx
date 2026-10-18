@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { setDueReminder } from "@/app/jadwal/actions";
-import { Alert, ArrowRight, ChevronLeft, ChevronRight, Clock, ReturnBook } from "@/components/icons";
+import { cancelBooking, extendLoan, setDueReminder } from "@/app/jadwal/actions";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { Alert, ArrowRight, CalendarCheck, ChevronLeft, ChevronRight, Clock, ReturnBook, Spinner } from "@/components/icons";
 import { ReturnDialog } from "@/components/schedule/ReturnDialog";
 import { useToast } from "@/components/Toast";
 import { Hourglass } from "@/components/illustrations/Hourglass";
@@ -12,7 +13,7 @@ import { OverdueClock } from "@/components/illustrations/OverdueClock";
 import { RoundButton } from "@/components/RoundButton";
 import { ui } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import { formatHour } from "@/lib/library";
+import { EXTENSION_DAYS, formatHour } from "@/lib/library";
 import { BULAN, DAY, formatDay, formatLong, formatShort, utc } from "@/lib/dates";
 import { FINE_PER_DAY, fineFor, overdueDays, rupiah } from "@/lib/fine";
 import type { ScheduleData, ScheduleEvent, ScheduleLoan } from "@/lib/server/schedule";
@@ -60,6 +61,9 @@ export function ScheduleClient({ data }: { data: ScheduleData }) {
   const [, startTransition] = useTransition();
   const router = useRouter();
   const [returning, setReturning] = useState<ScheduleLoan | null>(null);
+  const [cancelling, setCancelling] = useState<ScheduleLoan | null>(null);
+  /** Pinjaman yang sedang diperpanjang atau dibatalkan. */
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   /** Buku aktif yang lewat batas kembali. */
   const isLate = (l: ScheduleLoan) => l.status === "active" && l.due < today;
@@ -124,7 +128,7 @@ export function ScheduleClient({ data }: { data: ScheduleData }) {
   const upcomingAgenda = agenda.filter((e) => e.date >= today);
 
   const active = loans.filter((l) => l.status === "active");
-  const reserved = loans.find((l) => l.status === "reserved");
+  const reservedLoans = loans.filter((l) => l.status === "reserved");
   const lateLoans = active.filter(isLate);
   const totalFine = lateLoans.reduce((sum, l) => sum + fineFor(overdueDays(l.due, today)), 0);
 
@@ -139,7 +143,10 @@ export function ScheduleClient({ data }: { data: ScheduleData }) {
     const next = !remind;
     setRemind(next);
     startTransition(async () => {
-      const result = await setDueReminder(next);
+      const result = await setDueReminder(next).catch(() => ({
+        ok: false as const,
+        error: "Pengaturan pengingat gagal disimpan. Periksa koneksi lalu coba lagi.",
+      }));
       if (!result.ok) {
         setRemind(!next);
         notify({ kind: "error", text: result.error });
@@ -147,9 +154,44 @@ export function ScheduleClient({ data }: { data: ScheduleData }) {
       }
       notify({
         kind: "ok",
-        text: next ? "Pengingat menyala: kami kirim email dan WhatsApp sehari sebelum jatuh tempo." : "Pengingat jatuh tempo dimatikan.",
+        text: next ? "Pengingat menyala: kami kirim email dan WhatsApp sehari sebelum jatuh tempo, dan lagi bila terlambat." : "Pengingat jatuh tempo dimatikan.",
       });
     });
+  };
+
+  const extend = async (l: ScheduleLoan) => {
+    if (busyId) return;
+    setBusyId(l.id);
+    try {
+      const result = await extendLoan(l.id);
+      if (!result.ok) return notify({ kind: "error", text: result.error });
+      notify({
+        kind: "ok",
+        title: "Pinjaman diperpanjang",
+        text: `Kembalikan “${l.title}” paling lambat ${formatDay(Date.parse(result.dueOn))}.`,
+      });
+      startTransition(() => router.refresh());
+    } catch {
+      notify({ kind: "error", text: `“${l.title}” gagal diperpanjang. Periksa koneksi lalu coba lagi.` });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const cancel = async (l: ScheduleLoan) => {
+    if (busyId) return;
+    setBusyId(l.id);
+    try {
+      const result = await cancelBooking(l.id);
+      if (!result.ok) return notify({ kind: "error", text: result.error });
+      setCancelling(null);
+      notify({ kind: "ok", text: `Booking “${l.title}” dibatalkan. Bukunya terbuka lagi untuk anggota lain.` });
+      startTransition(() => router.refresh());
+    } catch {
+      notify({ kind: "error", text: `Booking “${l.title}” gagal dibatalkan. Periksa koneksi lalu coba lagi.` });
+    } finally {
+      setBusyId(null);
+    }
   };
 
   return (
@@ -168,7 +210,7 @@ export function ScheduleClient({ data }: { data: ScheduleData }) {
               <strong>{active.length}</strong> sedang dipinjam
             </span>
             <span className={ui.stat}>
-              <strong>{reserved ? 1 : 0}</strong> terbooking
+              <strong>{reservedLoans.length}</strong> terbooking
             </span>
             {upcomingAgenda.length > 0 && (
               <span className={ui.stat}>
@@ -438,14 +480,29 @@ export function ScheduleClient({ data }: { data: ScheduleData }) {
                         </span>
                       </p>
                     ) : (
-                      <button
-                        type="button"
-                        onClick={() => setReturning(l)}
-                        className={cn(ui.btn, ui.ghost, "min-h-11 self-start px-4 text-sm")}
-                      >
-                        <ReturnBook size={18} />
-                        Kembalikan buku
-                      </button>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setReturning(l)}
+                          className={cn(ui.btn, ui.ghost, "min-h-11 px-4 text-sm")}
+                        >
+                          <ReturnBook size={18} />
+                          Kembalikan buku
+                        </button>
+                        {!late && !l.extended && (
+                          <button
+                            type="button"
+                            onClick={() => extend(l)}
+                            disabled={busyId !== null}
+                            aria-busy={busyId === l.id}
+                            className={cn(ui.btn, ui.ghost, "min-h-11 px-4 text-sm disabled:cursor-wait disabled:opacity-70")}
+                          >
+                            {busyId === l.id ? <Spinner size={18} /> : <CalendarCheck size={18} />}
+                            Perpanjang {EXTENSION_DAYS} hari
+                          </button>
+                        )}
+                        {l.extended && <span className="text-[13px] text-ink-3">Sudah diperpanjang sekali.</span>}
+                      </div>
                     )}
                   </div>
                 </article>
@@ -456,8 +513,11 @@ export function ScheduleClient({ data }: { data: ScheduleData }) {
             </p>
           </section>
 
-          {reserved && (
-            <section className={cn(ui.card, "animate-fade-up border-accent-200 bg-accent-50 [animation-delay:.2s]")}>
+          {reservedLoans.map((reserved) => (
+            <section
+              key={reserved.id}
+              className={cn(ui.card, "animate-fade-up border-accent-200 bg-accent-50 [animation-delay:.2s]")}
+            >
               <span className={cn(ui.eyebrow, "text-accent-700")}>Terbooking</span>
               <div className="mt-3.5 flex items-start gap-4">
                 <MiniCover color={reserved.color} src={reserved.cover} striped />
@@ -469,29 +529,51 @@ export function ScheduleClient({ data }: { data: ScheduleData }) {
                     {Math.round((reserved.due - reserved.start) / DAY)} hari, dihitung mulai hari bukunya diserahkan
                     petugas. Kalau tidak diambil sampai akhir hari itu, booking batal otomatis.
                   </p>
-                  <Link
-                    href={`/buku/${reserved.slug}`}
-                    className="inline-flex min-h-11 items-center gap-1.5 text-sm font-bold text-accent-700 hover:text-accent-700"
-                  >
-                    Lihat buku
-                    <ArrowRight size={16} />
-                  </Link>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                    <Link
+                      href={`/buku/${reserved.slug}`}
+                      className="inline-flex min-h-11 items-center gap-1.5 text-sm font-bold text-accent-700 hover:text-accent-700"
+                    >
+                      Lihat buku
+                      <ArrowRight size={16} />
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => setCancelling(reserved)}
+                      disabled={busyId !== null}
+                      className="inline-flex min-h-11 cursor-pointer items-center border-0 bg-transparent p-0 text-sm font-bold text-ink-2 underline underline-offset-4 hover:text-ink disabled:cursor-wait"
+                    >
+                      Batalkan booking
+                    </button>
+                  </div>
                 </div>
               </div>
             </section>
-          )}
+          ))}
 
           <section className={cn(ui.card, "animate-fade-up [animation-delay:.3s]")}>
             <label className="flex min-h-11 cursor-pointer items-center justify-between gap-4">
               <span>
                 <strong className="block text-[15px]">Ingatkan aku</strong>
-                <span className="mt-0.5 block text-[13px] text-ink-3">Email dan WhatsApp ke kontak terdaftar, sehari sebelum jatuh tempo.</span>
+                <span className="mt-0.5 block text-[13px] text-ink-3">Email dan WhatsApp ke kontak terdaftar, sehari sebelum jatuh tempo, dan lagi bila bukunya terlambat.</span>
               </span>
               <input type="checkbox" className="switch" checked={remind} onChange={toggleRemind} />
             </label>
           </section>
         </aside>
       </div>
+
+      {cancelling && (
+        <ConfirmDialog
+          title={`Batalkan booking “${cancelling.title}”?`}
+          confirmLabel="Ya, batalkan"
+          busy={busyId === cancelling.id}
+          onConfirm={() => cancel(cancelling)}
+          onCancel={() => setCancelling(null)}
+        >
+          Bukunya terbuka lagi untuk anggota lain. Kalau masih ingin meminjam, booking ulang dari halaman buku.
+        </ConfirmDialog>
+      )}
 
       {returning && (
         <ReturnDialog

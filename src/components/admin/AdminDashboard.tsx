@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { deleteBook } from "@/app/admin/actions";
 import { CatalogLink, EditLink, iconAction } from "@/components/admin/IconLink";
+import { Pagination } from "@/components/catalog/Pagination";
 import { Plus, Search, Trash } from "@/components/icons";
 import { ui } from "@/components/ui";
 import { cn } from "@/lib/cn";
@@ -12,14 +13,22 @@ import type { AdminBookRow } from "@/lib/server/admin";
 import { useToast } from "@/components/Toast";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 
+/** Baris per halaman tabel koleksi. */
+const PER_PAGE = 10;
+
 /** Dasbor pustakawan: semua judul di koleksi, dengan stok dan jalan pintas untuk mengubahnya. */
 export function AdminDashboard({ books }: { books: AdminBookRow[] }) {
   const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
   const setNotice = useToast();
   const needle = query.trim().toLowerCase();
   const shown = needle
     ? books.filter((b) => `${b.title} ${b.author} ${b.shelf} ${b.category}`.toLowerCase().includes(needle))
     : books;
+  const pages = Math.max(1, Math.ceil(shown.length / PER_PAGE));
+  // Halaman terakhir bisa hilang setelah buku dihapus atau pencarian dipersempit: pakai halaman terakhir yang ada.
+  const current = Math.min(page, pages);
+  const rows = shown.slice((current - 1) * PER_PAGE, current * PER_PAGE);
   const copies = books.reduce((n, b) => n + b.copies, 0);
   const out = books.reduce((n, b) => n + b.out, 0);
   const noCover = books.filter((b) => !b.coverImage).length;
@@ -61,7 +70,10 @@ export function AdminDashboard({ books }: { books: AdminBookRow[] }) {
           id="cari-koleksi"
           type="search"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setPage(1);
+          }}
           placeholder="Cari judul, penulis, atau rak"
           className="min-h-12 min-w-0 flex-1 border-0 bg-transparent pr-4 text-[15px] text-ink outline-none"
         />
@@ -78,7 +90,10 @@ export function AdminDashboard({ books }: { books: AdminBookRow[] }) {
       ) : (
         <div className="relative mt-5 overflow-x-auto rounded-[22px] border border-line bg-paper">
           <table className="w-full min-w-[680px] border-collapse text-left text-sm">
-            <caption className="sr-only">Daftar buku di koleksi, {shown.length} judul</caption>
+            <caption className="sr-only">
+              Daftar buku di koleksi, {shown.length} judul
+              {pages > 1 && `, halaman ${current} dari ${pages}`}
+            </caption>
             <thead>
               <tr className="border-b border-line text-[13px] text-ink-3">
                 <th scope="col" className="py-3 pr-3 pl-5 font-semibold">
@@ -99,7 +114,7 @@ export function AdminDashboard({ books }: { books: AdminBookRow[] }) {
               </tr>
             </thead>
             <tbody>
-              {shown.map((b) => {
+              {rows.map((b) => {
                 const onShelf = b.copies - b.out;
                 return (
                   <tr key={b.id} className="border-b border-line-2 last:border-b-0 hover:bg-tint">
@@ -158,6 +173,23 @@ export function AdminDashboard({ books }: { books: AdminBookRow[] }) {
               Tidak ada buku yang cocok dengan “{query}”.
             </p>
           )}
+        </div>
+      )}
+
+      {pages > 1 && (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <p className="m-0 text-[13px] text-ink-3 tabular-nums">
+            {(current - 1) * PER_PAGE + 1}–{Math.min(current * PER_PAGE, shown.length)} dari {shown.length} judul
+          </p>
+          <Pagination
+            page={current}
+            total={pages}
+            onChange={setPage}
+            label="Halaman tabel koleksi"
+            align="end"
+            size="sm"
+            className="ml-auto"
+          />
         </div>
       )}
     </div>

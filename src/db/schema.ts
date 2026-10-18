@@ -188,8 +188,9 @@ export const loans = pgTable(
     /** Sudah diperpanjang atau belum: satu kali, 7 hari. */
     extensions: integer("extensions").notNull().default(0),
     /**
-     * Jatuh tempo yang sudah diingatkan lewat email/WhatsApp. Dibandingkan dengan due_on, jadi pinjaman yang
-     * diperpanjang mendapat pengingat lagi untuk tanggal barunya.
+     * Tanda pengingat email/WhatsApp. Sebelum jatuh tempo berisi tanggal jatuh tempo yang sudah diingatkan (dibandingkan
+     * dengan due_on, jadi pinjaman yang diperpanjang diingatkan lagi); setelah terlambat berisi tanggal pengingat
+     * terlambat terakhir dikirim. Lihat src/lib/server/due-reminders.ts.
      */
     remindedFor: date("reminded_for", { mode: "string" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -212,7 +213,8 @@ export const loans = pgTable(
 /* Sumbangan                                                            */
 /* ------------------------------------------------------------------ */
 
-export const bookCondition = pgEnum("book_condition", ["baru", "sangat", "baik"]);
+/** Kondisi buku sumbangan: baru, baik (pernah dibaca, terawat), kurang baik (ada kerusakan kecil, masih bisa dibaca). */
+export const bookCondition = pgEnum("book_condition", ["baru", "baik", "kurang"]);
 export const donationMethod = pgEnum("donation_method", ["antar", "jemput"]);
 /** diajukan (anggota mengisi formulir) -> dikirim (disetujui pustakawan, buku dalam pengiriman) -> diterima (buku sudah di tangan petugas). */
 export const donationStatus = pgEnum("donation_status", ["diajukan", "dikirim", "diterima", "ditolak"]);
@@ -412,4 +414,22 @@ export const libraryStatus = pgTable(
     check("library_status_single_row", sql`${t.id} = 1`),
     check("library_status_note_length", sql`char_length(${t.note}) <= 120`),
   ],
+);
+
+/* ------------------------------------------------------------------ */
+/* Batas percobaan masuk                                                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Percobaan masuk yang gagal, untuk membatasi tebak kata sandi (Neon Auth tidak membatasinya). `key` = "akun:<email>"
+ * atau "ip:<alamat>". Baris lebih dari sehari dibersihkan saat ada percobaan gagal baru. Lihat src/lib/server/login-throttle.ts.
+ */
+export const loginFailures = pgTable(
+  "login_failures",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    key: text("key").notNull(),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("login_failures_key_at_idx").on(t.key, t.at)],
 );
